@@ -2,6 +2,14 @@
 
 RabbitMQ transport for [Zusammen](https://github.com/mauroservienti/Zusammen) transactional sessions, on amqplib 2.
 
+## Install
+
+```sh
+npm install @zusammen/core @zusammen/rabbitmq amqplib
+```
+
+Until 1.0, releases are prereleases on the `next` dist-tag: append `@next` to the `@zusammen/*` packages to get the latest one.
+
 ## Usage
 
 ```typescript

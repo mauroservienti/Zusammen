@@ -2,6 +2,14 @@
 
 MongoDB persistence for [Zusammen](https://github.com/mauroservienti/Zusammen) transactional sessions.
 
+## Install
+
+```sh
+npm install @zusammen/core @zusammen/mongodb mongodb
+```
+
+Until 1.0, releases are prereleases on the `next` dist-tag: append `@next` to the `@zusammen/*` packages to get the latest one.
+
 Requires a replica set or sharded cluster (MongoDB transactions) and the `mongodb` driver 7.
 
 ## Usage

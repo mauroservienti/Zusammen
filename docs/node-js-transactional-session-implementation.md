@@ -1,5 +1,7 @@
 # Zusammen — Node.js Transactional Session Implementation Plan
 
+> **Status: implemented.** All phases below are done and released (first release: `0.1.0-alpha.1`). This document is kept as the design record; the [guides](guides) and package READMEs describe usage.
+
 ## Overview
 
 Zusammen is a transactional session library for Node.js. It atomically couples business data changes with outgoing messages using the Outbox pattern. Dispatch is guaranteed by a **control message** sent through the transport, instead of a background poller. Initial support targets RabbitMQ (transport) and MongoDB (persistence), behind provider interfaces so others can be added.
@@ -313,6 +315,7 @@ GitHub: [mauroservienti/Zusammen](https://github.com/mauroservienti/Zusammen) (p
 - **Squash merges only**: disable merge commits and rebase merging in the repository settings; use the PR title and description as the squash commit message; automatically delete head branches after merge.
 - **Workflow**: work happens on branches pushed to GitHub and merged through squash-merged PRs (`gh pr create`, `gh pr merge --squash`) once CI is green.
 - **Dependency updates**: Dependabot (`.github/dependabot.yml`) for npm, GitHub Actions and NuGet, with grouped weekly updates.
+- **Releases** (`.github/workflows/release.yml`): pushing a SemVer tag without prefix (`1.2.0`, `1.2.0-alpha.1`) on a commit of `main` runs the full CI, then publishes every npm package and `Zusammen.NServiceBus` with that version (one version for everything; nothing is committed back) and creates a GitHub release with generated notes. Stable versions get the npm `latest` dist-tag, prereleases `next`. npm: [trusted publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC, no stored token; configured per package for `mauroservienti/Zusammen` and `release.yml`), with provenance. npm only allows configuring it for existing packages, so the first release used a short-lived `NPM_API_KEY` secret, deleted afterwards; the workflow still falls back to it if present. Packages are packed with pnpm (resolving `workspace:^`) and published with the npm CLI (11.5.1+). NuGet: `NUGET_API_KEY` secret. Re-running a failed release skips what was already published. A tag ruleset (`refs/tags/*.*.*`) lets only repository admins create, move or delete release tags.
 - **License**: MIT (`LICENSE`, `license` in every package, `PackageLicenseExpression` for the NuGet package).
 
 ## Implementation Phases

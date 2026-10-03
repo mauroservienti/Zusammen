@@ -2,6 +2,14 @@
 
 Opt-in NServiceBus wire compatibility for [Zusammen](https://github.com/mauroservienti/Zusammen): messages that [NServiceBus](https://particular.net/nservicebus) endpoints using the RabbitMQ transport can consume, following the [native integration](https://docs.particular.net/transports/rabbitmq/native-integration) guidance.
 
+## Install
+
+```sh
+npm install @zusammen/core @zusammen/nservicebus @zusammen/rabbitmq amqplib
+```
+
+Until 1.0, releases are prereleases on the `next` dist-tag: append `@next` to the `@zusammen/*` packages to get the latest one.
+
 ## Usage
 
 ```typescript

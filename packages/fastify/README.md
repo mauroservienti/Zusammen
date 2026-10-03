@@ -2,6 +2,14 @@
 
 Fastify 5 integration for [Zusammen](https://github.com/mauroservienti/Zusammen) transactional sessions.
 
+## Install
+
+```sh
+npm install @zusammen/core @zusammen/fastify fastify
+```
+
+Until 1.0, releases are prereleases on the `next` dist-tag: append `@next` to the `@zusammen/*` packages to get the latest one.
+
 ```typescript
 import { sessionOf, zusammen } from '@zusammen/fastify';
 

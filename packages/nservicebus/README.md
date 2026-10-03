@@ -50,4 +50,6 @@ The NServiceBus topologies reject other conventions at startup. Use `nserviceBus
 
 Headers: `NServiceBus.MessageId`, `NServiceBus.MessageIntent` (`Send` / `Publish`), `NServiceBus.TimeSent` (`yyyy-MM-dd HH:mm:ss:ffffff Z`), `NServiceBus.ContentType`, `NServiceBus.ConversationId` (default: the session ID), `NServiceBus.CorrelationId` (default: the message ID), `NServiceBus.OriginatingEndpoint`, `NServiceBus.OriginatingMachine`, optionally `NServiceBus.ReplyToAddress`, plus `zusammen.message-type`. `NServiceBus.EnclosedMessageTypes` is set for mapped types only.
 
+Header semantics: [NServiceBus message headers](https://docs.particular.net/nservicebus/messaging/headers). Routing: [RabbitMQ routing topologies](https://docs.particular.net/transports/rabbitmq/routing-topology).
+
 **Unmapped types** need the [`Zusammen.NServiceBus`](../../dotnet) package on the receiving endpoint. See [message types](../../docs/guides/message-types.md) for topics, mapping and inheritance, and [delivery guarantees](../../docs/guides/delivery-guarantees.md) for using the NServiceBus outbox to deduplicate.

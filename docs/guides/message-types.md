@@ -46,7 +46,7 @@ A registry keyed by class name (`{ OrderPlaced: 'sales.order-placed' }`) is also
 
 ## NServiceBus convention
 
-NServiceBus needs the .NET type of every message. With `nserviceBusConvention()`:
+NServiceBus needs the .NET type of every message ([message type detection](https://docs.particular.net/nservicebus/messaging/message-type-detection)). With `nserviceBusConvention()`:
 
 - **Mapped messages** (via the `messageType` option or the `messageTypes` registry, using the .NET FullName such as `Sales.Messages.OrderPlaced`) carry `NServiceBus.EnclosedMessageTypes` and work with any NServiceBus endpoint.
 - **Unmapped messages** use the class name and carry only `zusammen.message-type`. Endpoints resolve them with the `Zusammen.NServiceBus` package (`endpointConfiguration.EnableZusammen()`), which matches the name to the endpoint's message types by simple name. Without the package, the message fails on the receiver and ends up in its error queue.
@@ -68,7 +68,7 @@ endpointConfiguration.EnableZusammen()
 
 ### Publish topics
 
-The routing topology decides where events go, and NServiceBus subscribers decide where they listen. Zusammen never derives the publish target from the type; pass `topic` per call or register it in `topics` (keyed by the message type name):
+The routing topology decides where events go, and NServiceBus subscribers decide where they listen ([routing topologies](https://docs.particular.net/transports/rabbitmq/routing-topology)). Zusammen never derives the publish target from the type; pass `topic` per call or register it in `topics` (keyed by the message type name):
 
 | Topology     | Topic                                               | Example                      |
 | ------------ | --------------------------------------------------- | ---------------------------- |
@@ -81,4 +81,4 @@ Base classes and interfaces are out of scope: subscribe to the concrete event ty
 
 ### Property names
 
-NServiceBus' default System.Text.Json serializer matches property names case-sensitively, so the NServiceBus convention writes PascalCase property names (`orderId` → `OrderId`). For endpoints configured with camelCase JSON options, use `propertyNaming: 'preserve'`.
+NServiceBus' default [System.Text.Json serializer](https://docs.particular.net/nservicebus/serialization/system-json) matches property names case-sensitively, so the NServiceBus convention writes PascalCase property names (`orderId` → `OrderId`). For endpoints configured with camelCase JSON options, use `propertyNaming: 'preserve'`.

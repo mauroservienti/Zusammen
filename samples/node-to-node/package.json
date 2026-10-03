@@ -1,0 +1,23 @@
+{
+  "name": "@zusammen/sample-node-to-node",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Zusammen sample: an Express API publishing events to a Node.js worker",
+  "type": "module",
+  "scripts": {
+    "api": "node --experimental-strip-types src/api.ts",
+    "shipping": "node --experimental-strip-types src/shipping.ts"
+  },
+  "dependencies": {
+    "@zusammen/core": "workspace:^",
+    "@zusammen/express": "workspace:^",
+    "@zusammen/mongodb": "workspace:^",
+    "@zusammen/rabbitmq": "workspace:^",
+    "amqplib": "^2.2.0",
+    "express": "^5.2.1",
+    "mongodb": "^7.7.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
+  }
+}

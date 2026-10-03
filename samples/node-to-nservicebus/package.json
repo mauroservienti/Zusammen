@@ -1,0 +1,23 @@
+{
+  "name": "@zusammen/sample-node-to-nservicebus",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Zusammen sample: an Express API sending and publishing to an NServiceBus endpoint",
+  "type": "module",
+  "scripts": {
+    "api": "node --experimental-strip-types src/api.ts",
+    "billing": "dotnet run --project Billing"
+  },
+  "dependencies": {
+    "@zusammen/core": "workspace:^",
+    "@zusammen/express": "workspace:^",
+    "@zusammen/mongodb": "workspace:^",
+    "@zusammen/nservicebus": "workspace:^",
+    "@zusammen/rabbitmq": "workspace:^",
+    "express": "^5.2.1",
+    "mongodb": "^7.7.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
+  }
+}

@@ -44,3 +44,4 @@ jobs:
           dotnet-version: '10.0.x'
       - run: dotnet build dotnet/Zusammen.NServiceBus.slnx -c Release
       - run: dotnet test dotnet/Zusammen.NServiceBus.slnx -c Release --no-build
+      - run: dotnet build samples/node-to-nservicebus/Billing -c Release

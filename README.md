@@ -102,6 +102,13 @@ const factory = createSessionFactory({
 
 Messages without a .NET type mapping can be consumed by endpoints that reference the `Zusammen.NServiceBus` NuGet package (in [`dotnet/`](dotnet)) and call `endpointConfiguration.EnableZusammen()`, which matches them to the endpoint's message types by name. Compatibility is tested against real NServiceBus endpoints, and behavior is checked against the [NServiceBus TransactionalSession](https://github.com/Particular/NServiceBus.TransactionalSession) acceptance tests via a [conformance matrix](docs/nservicebus-conformance.md).
 
+## Documentation
+
+- Guides: [delivery guarantees](docs/guides/delivery-guarantees.md) (what receivers need to do), [message types](docs/guides/message-types.md) (naming, bundlers, NServiceBus mapping and topics), [operations](docs/guides/operations.md) (resources, control queues, timing, logging).
+- Package READMEs: [core](packages/core), [mongodb](packages/mongodb), [rabbitmq](packages/rabbitmq), [nservicebus](packages/nservicebus), [express](packages/express), [fastify](packages/fastify), [nestjs](packages/nestjs), [hono](packages/hono), [Zusammen.NServiceBus](dotnet).
+- Samples: [Node.js → Node.js](samples/node-to-node) (Express API and an idempotent worker), [Node.js → NServiceBus](samples/node-to-nservicebus) (Express API and a .NET NServiceBus endpoint).
+- Design: [implementation plan](docs/node-js-transactional-session-implementation.md), [NServiceBus conformance matrix](docs/nservicebus-conformance.md).
+
 ## Development
 
 Requirements: Node.js 22.13+, [pnpm](https://pnpm.io), Docker (for local services and integration tests), .NET 10 SDK (for the NServiceBus package and compatibility tests; the compatibility tests are skipped without it).

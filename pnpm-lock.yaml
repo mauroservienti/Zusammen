@@ -357,6 +357,62 @@ importers:
         specifier: workspace:^
         version: link:../core
 
+  samples/node-to-node:
+    dependencies:
+      '@zusammen/core':
+        specifier: workspace:^
+        version: link:../../packages/core
+      '@zusammen/express':
+        specifier: workspace:^
+        version: link:../../packages/express
+      '@zusammen/mongodb':
+        specifier: workspace:^
+        version: link:../../packages/mongodb
+      '@zusammen/rabbitmq':
+        specifier: workspace:^
+        version: link:../../packages/rabbitmq
+      amqplib:
+        specifier: ^2.2.0
+        version: 2.2.0
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
+      mongodb:
+        specifier: ^7.7.0
+        version: 7.7.0
+    devDependencies:
+      '@types/express':
+        specifier: ^5.0.6
+        version: 5.0.6
+
+  samples/node-to-nservicebus:
+    dependencies:
+      '@zusammen/core':
+        specifier: workspace:^
+        version: link:../../packages/core
+      '@zusammen/express':
+        specifier: workspace:^
+        version: link:../../packages/express
+      '@zusammen/mongodb':
+        specifier: workspace:^
+        version: link:../../packages/mongodb
+      '@zusammen/nservicebus':
+        specifier: workspace:^
+        version: link:../../packages/nservicebus
+      '@zusammen/rabbitmq':
+        specifier: workspace:^
+        version: link:../../packages/rabbitmq
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
+      mongodb:
+        specifier: ^7.7.0
+        version: 7.7.0
+    devDependencies:
+      '@types/express':
+        specifier: ^5.0.6
+        version: 5.0.6
+
 packages:
 
   '@balena/dockerignore@1.0.2':

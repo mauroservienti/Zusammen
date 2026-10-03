@@ -51,7 +51,7 @@ If the tombstone insert itself hits a duplicate key (the commit landed concurren
 pnpm monorepo. Core ships a neutral wire format; NServiceBus compatibility is opt-in.
 
 - `@zusammen/core` — `TransactionalSession`, session factory, `ControlMessageHandler` (transport-agnostic decision logic), `withSession` + `AsyncLocalStorage` session context, provider contracts, `MessageConvention` contract + the default Zusammen convention, errors. No runtime dependencies.
-- `@zusammen/mongodb` — `MongoDBPersistenceProvider`
+- `@zusammen/mongodb` — `MongoDBPersistence` (transaction context: the MongoDB `ClientSession`)
 - `@zusammen/rabbitmq` — `RabbitMQTransportProvider`, `RoutingTopology` contract + the default Zusammen topology
   - `@zusammen/rabbitmq/nservicebus` (subpath export) — NServiceBus conventional and direct routing topologies
 - `@zusammen/nservicebus` — transport-agnostic NServiceBus message convention (headers, type names, serialization). Opt-in.
@@ -314,7 +314,7 @@ GitHub: [mauroservienti/Zusammen](https://github.com/mauroservienti/Zusammen) (p
 1. **Scaffold** — pnpm workspace, TypeScript project references, Vitest, ESLint/Prettier, `docker-compose.yml` (MongoDB replica set + RabbitMQ) for local dev, CI workflow, scheduled NServiceBus conformance drift check (see below).
 2. **Core contracts** — types, interfaces (`PersistenceProvider`, `TransportProvider`, `MessageConvention`, `TransactionalSession`, `SessionFactory`), error classes, logger. Type-level tests (`expectTypeOf`) for the contracts.
 3. **Core logic + default convention** — `TransactionalSession` (single use, `await using` rolls back), session factory (injectable clock and ID generator), `createControlMessageHandler` (window/backoff/tombstone/failures), Zusammen convention (type registry by constructor or class name, topics, pluggable serializer). Unit tests with in-memory fake providers covering every row of the decision table and every failure scenario.
-4. **MongoDB provider** — `ClientSession` transactions, primary/`majority` read and write concerns on the control path, outbox collection, indexes (TTL), tombstone via duplicate key detection, mapping duplicate key on commit to `SessionCommitConflictError`.
+4. **MongoDB provider** — `ClientSession` transactions on the application's `MongoClient`, document mapping (headers stored as key/value pairs because header names contain dots), write conflicts on the outbox insert mapped to `SessionCommitConflictError`, a shared persistence contract suite (`@zusammen/testing`, private) run against the in-memory fake and MongoDB, primary/`majority` read and write concerns on the control path, outbox collection, indexes (TTL), tombstone via duplicate key detection, mapping duplicate key on commit to `SessionCommitConflictError`.
 5. **RabbitMQ provider** — `RoutingTopology` contract + Zusammen topology, confirm channels, control/retry/error queues, `mandatory` + returns handling for sends, consumer with prefetch, `ControlResult` → ack/delay/dead-letter mapping.
 6. **Integration tests (Testcontainers)** — scenarios below, plus concurrent sessions and multiple competing consumers, using the default wire format.
 7. **Framework integrations** — core `withSession` + `AsyncLocalStorage` context; Express, Fastify, NestJS adapters, then Hono. Tests per adapter: commit on success before the response, rollback on error, commit failure mapped to an error response, session reachable via `getSession()` and the request object.

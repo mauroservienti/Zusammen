@@ -5,7 +5,7 @@ import {
   type ControlMessage,
   type TransportOperation,
 } from '@zusammen/core';
-import { InMemoryPersistence, InMemoryTransport } from './fakes.js';
+import { InMemoryPersistence, InMemoryTransport } from '@zusammen/testing';
 
 const operation: TransportOperation = {
   messageId: 'm1',

@@ -2,10 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "customConditions": ["@zusammen/source"],
-    "paths": {
-      "@zusammen/testing": ["../testing/src/index.ts"]
-    }
+    "customConditions": ["@zusammen/source"]
   },
   "include": ["src", "test"]
 }

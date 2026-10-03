@@ -14,5 +14,7 @@ export default defineConfig({
   test: {
     include: ['packages/*/test/**/*.test.ts'],
     passWithNoTests: true,
+    hookTimeout: 120_000,
+    testTimeout: 30_000,
   },
 });

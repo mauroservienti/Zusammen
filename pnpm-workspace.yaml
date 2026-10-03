@@ -1,4 +1,8 @@
 packages:
   - packages/*
+allowBuilds:
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
 minimumReleaseAgeExclude:
   - eslint@10.12.0

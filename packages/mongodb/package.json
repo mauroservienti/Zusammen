@@ -22,7 +22,10 @@
     "mongodb": "^7.0.0"
   },
   "devDependencies": {
+    "@testcontainers/mongodb": "^12.2.0",
     "@zusammen/core": "workspace:^",
-    "mongodb": "^7.7.0"
+    "@zusammen/testing": "workspace:^",
+    "mongodb": "^7.7.0",
+    "testcontainers": "^12.2.0"
   }
 }

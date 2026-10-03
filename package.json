@@ -15,7 +15,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "conformance:check": "node scripts/check-nservicebus-conformance.mjs"
+    "conformance:check": "node scripts/check-nservicebus-conformance.mjs",
+    "test:unit": "vitest run --exclude '**/*.int.test.ts'"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

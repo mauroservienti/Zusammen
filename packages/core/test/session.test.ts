@@ -8,7 +8,7 @@ import {
   type CreateSessionFactoryOptions,
   type MessageConvention,
 } from '@zusammen/core';
-import { InMemoryPersistence, InMemoryTransport, type InMemoryTransaction } from './fakes.js';
+import { InMemoryPersistence, InMemoryTransport, type InMemoryTransaction } from '@zusammen/testing';
 
 class OrderPlaced {
   constructor(readonly orderId: string) {}

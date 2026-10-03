@@ -299,6 +299,16 @@ The [NServiceBus TransactionalSession acceptance tests](https://github.com/Parti
 - Compat tests: .NET 10 SDK, `NServiceBus`, `NServiceBus.RabbitMQ` (test-only, under `compat/`)
 - Dev: `typescript`, `vitest`, `eslint`, `prettier`, `testcontainers` (MongoDB single-node replica set + RabbitMQ)
 
+## Repository Setup
+
+GitHub: [mauroservienti/Zusammen](https://github.com/mauroservienti/Zusammen) (public). Deferred until the repository is more stable (branch protection would slow down the remaining phases); until then, branches are squash-merged locally and pushed to `main`:
+
+- **Protect `main`**: require a pull request before merging, require the CI status checks (`Node 22`, `Node 24`, `Node 26`) to pass and the branch to be up to date, require linear history, block force pushes and deletion. Apply to administrators too, so the rules can't be bypassed by accident.
+- **Squash merges only**: disable merge commits and rebase merging in the repository settings; use the PR title and description as the squash commit message; automatically delete head branches after merge.
+- **Workflow change**: from then on, work happens on branches pushed to GitHub, merged through a squash-merged PR (`gh pr create`, `gh pr merge --squash`) once CI is green, instead of local squash merges.
+- **Dependency updates**: enable Dependabot (npm, GitHub Actions) with grouped weekly updates.
+- **License**: still to be decided; add `LICENSE` and the `license` field to every package before the first npm publish.
+
 ## Implementation Phases
 
 1. **Scaffold** — pnpm workspace, TypeScript project references, Vitest, ESLint/Prettier, `docker-compose.yml` (MongoDB replica set + RabbitMQ) for local dev, CI workflow, scheduled NServiceBus conformance drift check (see below).

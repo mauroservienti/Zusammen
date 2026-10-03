@@ -2,6 +2,7 @@
   "name": "@zusammen/rabbitmq",
   "version": "0.0.0",
   "description": "RabbitMQ transport for Zusammen transactional sessions",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -33,5 +34,10 @@
     "@zusammen/testing": "workspace:^",
     "amqplib": "^2.2.0",
     "testcontainers": "^12.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mauroservienti/Zusammen.git",
+    "directory": "packages/rabbitmq"
   }
 }

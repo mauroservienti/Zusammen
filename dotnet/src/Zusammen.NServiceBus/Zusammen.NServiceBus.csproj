@@ -7,11 +7,20 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Zusammen.NServiceBus</PackageId>
+    <Authors>Mauro Servienti</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/mauroservienti/Zusammen</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mauroservienti/Zusammen</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Lets NServiceBus endpoints consume messages sent by Zusammen (Node.js) without explicit .NET type mappings.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="NServiceBus" Version="[10.2.9, 11.0.0)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
   <ItemGroup>

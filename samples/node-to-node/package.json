@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Zusammen sample: an Express API publishing events to a Node.js worker",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "api": "node --experimental-strip-types src/api.ts",

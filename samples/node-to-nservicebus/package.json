@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Zusammen sample: an Express API sending and publishing to an NServiceBus endpoint",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "api": "node --experimental-strip-types src/api.ts",

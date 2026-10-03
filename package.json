@@ -1,5 +1,6 @@
 {
   "name": "zusammen",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.8.1",

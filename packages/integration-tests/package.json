@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "End-to-end tests of Zusammen with MongoDB and RabbitMQ",
+  "license": "MIT",
   "type": "module",
   "devDependencies": {
     "@testcontainers/mongodb": "^12.2.0",

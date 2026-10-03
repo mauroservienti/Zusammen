@@ -2,6 +2,7 @@
   "name": "@zusammen/express",
   "version": "0.0.0",
   "description": "Express integration for Zusammen transactional sessions",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -26,5 +27,10 @@
     "@zusammen/core": "workspace:^",
     "@zusammen/testing": "workspace:^",
     "express": "^5.2.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mauroservienti/Zusammen.git",
+    "directory": "packages/express"
   }
 }

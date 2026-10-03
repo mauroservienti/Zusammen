@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm-development:
+        dependency-type: development
+      npm-production:
+        dependency-type: production
+    # Peer dependency ranges are deliberately broad; only bump what we build and test with
+    versioning-strategy: increase-if-necessary
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ['*']
+
+  - package-ecosystem: nuget
+    directories:
+      - /dotnet/src/Zusammen.NServiceBus
+      - /dotnet/test/Zusammen.NServiceBus.Tests
+      - /dotnet/compat/Zusammen.Compat.Endpoint
+      - /samples/node-to-nservicebus/Billing
+    schedule:
+      interval: weekly
+    groups:
+      nuget:
+        patterns: ['*']

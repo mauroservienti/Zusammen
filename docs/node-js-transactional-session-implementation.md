@@ -307,13 +307,13 @@ The [NServiceBus TransactionalSession acceptance tests](https://github.com/Parti
 
 ## Repository Setup
 
-GitHub: [mauroservienti/Zusammen](https://github.com/mauroservienti/Zusammen) (public). Deferred until the repository is more stable (branch protection would slow down the remaining phases); until then, branches are squash-merged locally and pushed to `main`:
+GitHub: [mauroservienti/Zusammen](https://github.com/mauroservienti/Zusammen) (public). Set up after phase 9:
 
-- **Protect `main`**: require a pull request before merging, require the CI status checks (`Node 22`, `Node 24`, `Node 26`) to pass and the branch to be up to date, require linear history, block force pushes and deletion. Apply to administrators too, so the rules can't be bypassed by accident.
+- **Protect `main`**: require a pull request before merging, require the CI status checks (`Node 22`, `Node 24`, `Node 26`, `.NET`) to pass and the branch to be up to date, require linear history, block force pushes and deletion. Apply to administrators too, so the rules can't be bypassed by accident.
 - **Squash merges only**: disable merge commits and rebase merging in the repository settings; use the PR title and description as the squash commit message; automatically delete head branches after merge.
-- **Workflow change**: from then on, work happens on branches pushed to GitHub, merged through a squash-merged PR (`gh pr create`, `gh pr merge --squash`) once CI is green, instead of local squash merges.
-- **Dependency updates**: enable Dependabot (npm, GitHub Actions) with grouped weekly updates.
-- **License**: still to be decided; add `LICENSE` and the `license` field to every package before the first npm publish.
+- **Workflow**: work happens on branches pushed to GitHub and merged through squash-merged PRs (`gh pr create`, `gh pr merge --squash`) once CI is green.
+- **Dependency updates**: Dependabot (`.github/dependabot.yml`) for npm, GitHub Actions and NuGet, with grouped weekly updates.
+- **License**: MIT (`LICENSE`, `license` in every package, `PackageLicenseExpression` for the NuGet package).
 
 ## Implementation Phases
 

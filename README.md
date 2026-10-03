@@ -129,4 +129,4 @@ docker compose up -d   # MongoDB (single-node replica set) and RabbitMQ for loca
 
 ## License
 
-To be decided.
+[MIT](LICENSE)

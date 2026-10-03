@@ -127,6 +127,8 @@ docker compose up -d   # MongoDB (single-node replica set) and RabbitMQ for loca
 
 `pnpm conformance:check` verifies the NServiceBus conformance matrix against the upstream acceptance tests.
 
+Releases are published by pushing a SemVer tag (e.g. `0.1.0-alpha.1`) on `main`: see [repository setup](docs/node-js-transactional-session-implementation.md#repository-setup).
+
 ## License
 
 [MIT](LICENSE)

@@ -1,0 +1,112 @@
+name: Release
+
+# Pushing a SemVer tag (e.g. 1.2.0, 1.2.0-alpha.1) releases every package with that version
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - id: version
+        name: Check SemVer and that the tag is on main
+        run: |
+          version="${GITHUB_REF_NAME}"
+          node scripts/set-version.mjs "$version" > /dev/null
+          git checkout -- packages
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $version doesn't point to a commit on main"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+  ci:
+    name: CI
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish ${{ needs.validate.outputs.version }}
+    needs: [validate, ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # GitHub release
+      id-token: write # npm provenance
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+      # Prereleases never become what `npm install` picks by default
+      NPM_DIST_TAG: ${{ needs.validate.outputs.prerelease == 'true' && 'next' || 'latest' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - run: pnpm install --frozen-lockfile
+      - name: Set version
+        run: node scripts/set-version.mjs "$VERSION"
+      - run: pnpm build
+      - name: Include the license in every package
+        run: for dir in packages/*/; do cp LICENSE "$dir"; done
+
+      # Trusted publishing (OIDC) needs npm 11.5.1+; Node 24 may ship an older one
+      - name: Update npm
+        run: npm install -g npm@^11.5.1
+      - name: Pack npm packages
+        # pnpm turns workspace:^ dependencies into ^<version>; private packages are skipped
+        run: pnpm -r --filter './packages/*' exec sh -c 'if [ "$(node -p "require(\"./package.json\").private === true")" != true ]; then pnpm pack --pack-destination "$GITHUB_WORKSPACE/npm"; fi'
+      - name: Publish to npm
+        # Trusted publishing when configured for the packages; otherwise the NPM_API_KEY secret (only needed for the
+        # very first release, before the packages exist). Already published versions are skipped, so a failed release
+        # can be re-run.
+        run: |
+          for tarball in npm/*.tgz; do
+            name="$(tar -xzOf "$tarball" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0)).name')"
+            if npm view "$name@$VERSION" version > /dev/null 2>&1; then
+              echo "$name@$VERSION is already published"
+              continue
+            fi
+            npm publish "$tarball" --access public --provenance --tag "$NPM_DIST_TAG"
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_API_KEY }}
+
+      - name: Pack Zusammen.NServiceBus
+        run: dotnet pack dotnet/src/Zusammen.NServiceBus -c Release -p:Version="$VERSION" -o artifacts
+      - name: Publish to NuGet
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+      - name: Create GitHub release
+        run: |
+          prerelease=()
+          if [[ "$VERSION" == *-* ]]; then prerelease=(--prerelease); fi
+          gh release create "$VERSION" artifacts/*.nupkg --verify-tag --generate-notes --title "$VERSION" "${prerelease[@]}"
+        env:
+          GH_TOKEN: ${{ github.token }}

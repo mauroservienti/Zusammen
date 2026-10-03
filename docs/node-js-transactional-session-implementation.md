@@ -1,0 +1,392 @@
+# Zusammen — Node.js Transactional Session Implementation Plan
+
+## Overview
+
+Zusammen is a transactional session library for Node.js. It atomically couples business data changes with outgoing messages using the Outbox pattern. Dispatch is guaranteed by a **control message** sent through the transport, instead of a background poller. Initial support targets RabbitMQ (transport) and MongoDB (persistence), behind provider interfaces so others can be added.
+
+### Delivery guarantees
+
+- **Atomic state change**: business data and outgoing messages are committed together or not at all.
+- **At-least-once dispatch**: every committed message is eventually dispatched, possibly more than once (e.g., crash between dispatch and marking dispatched, or immediate dispatch racing the control message).
+- **Stable message IDs**: each outgoing message gets an ID at `send`/`publish` time that survives re-dispatch, so receivers can deduplicate.
+
+Zusammen does **not** provide exactly-once delivery; receivers must be idempotent (or use an inbox/outbox on their side).
+
+## Control Message Approach
+
+If the session has no outgoing operations, `commit()` only commits the database transaction: no control message, no outbox record. Otherwise, on `commit()`:
+
+1. Send the control message (with publisher confirms). If this fails, roll back and throw.
+2. Store the outbox record (one document per session, `_id = sessionId`) inside the database transaction.
+3. Commit the database transaction.
+4. Best-effort immediate dispatch of the outbox operations, then mark the record as dispatched. Failures here are logged, not thrown — the control message covers them.
+
+When the control message is consumed:
+
+| Outbox record state               | Within commit window              | Window expired                 |
+| --------------------------------- | --------------------------------- | ------------------------------ |
+| Exists, dispatched (or tombstone) | ack (no-op)                       | ack (no-op)                    |
+| Exists, not dispatched            | dispatch, mark dispatched, ack    | dispatch, mark dispatched, ack |
+| Does not exist                    | retry with delay (commit pending) | store **tombstone**, ack       |
+
+### Tombstone
+
+A tombstone is an outbox record with `_id = sessionId`, already marked dispatched and with no operations. If the original transaction later tries to commit, its outbox insert fails with a duplicate key error, so the session commit fails and the user sees an error. This guarantees that a commit can never succeed without a safety net, and that the control message never loops forever for a rolled-back or crashed session.
+
+If the tombstone insert itself hits a duplicate key (the commit landed concurrently), re-read the record and handle it as "exists".
+
+### Failure scenarios
+
+- **Normal flow**: immediate dispatch succeeds; the control message finds the record dispatched → no-op.
+- **Crash or rollback before commit**: control message retries until the window expires, then stores a tombstone → no-op.
+- **Crash after commit, before dispatch**: control message dispatches.
+- **Immediate dispatch fails**: control message dispatches.
+- **Control message arrives before commit**: delayed retry until the record appears.
+- **Commit slower than the window**: tombstone wins; commit fails with a duplicate key → user gets an error, nothing is dispatched, no business data committed.
+- **Multiple instances**: competing consumers on the control queue; each control message is processed by one instance at a time.
+- **Poison control message** (e.g., dispatch keeps failing): after N attempts it moves to an error queue.
+
+## Architecture
+
+pnpm monorepo. Core ships a neutral wire format; NServiceBus compatibility is opt-in.
+
+- `@zusammen/core` — `TransactionalSession`, session factory, `ControlMessageHandler` (transport-agnostic decision logic), `withSession` + `AsyncLocalStorage` session context, provider contracts, `MessageConvention` contract + the default Zusammen convention, errors. No runtime dependencies.
+- `@zusammen/mongodb` — `MongoDBPersistenceProvider`
+- `@zusammen/rabbitmq` — `RabbitMQTransportProvider`, `RoutingTopology` contract + the default Zusammen topology
+  - `@zusammen/rabbitmq/nservicebus` (subpath export) — NServiceBus conventional and direct routing topologies
+- `@zusammen/nservicebus` — transport-agnostic NServiceBus message convention (headers, type names, serialization). Opt-in.
+- `@zusammen/express`, `@zusammen/fastify`, `@zusammen/nestjs`, `@zusammen/hono` — thin web framework adapters (see Integrations).
+
+Future transports follow the same split, e.g. `@zusammen/sqs` + `@zusammen/sqs/nservicebus`, where the SQS-specific NServiceBus rules are much lighter than RabbitMQ's.
+
+### Extension points
+
+Two independent seams decide what goes on the wire:
+
+1. **`MessageConvention`** (core, transport-agnostic) — runs at `send`/`publish` time and turns a user message into a `TransportOperation`: resolves the message type name, builds headers, serializes the body, fills generic native properties (content type, correlation ID, reply-to).
+2. **`RoutingTopology`** (per transport) — runs at dispatch time and decides where an operation goes (exchange, routing key, `mandatory`) and which exchanges to declare.
+
+### Control message processing: decision vs. delivery
+
+- **Core decides.** `ControlMessageHandler` takes a control message plus the outbox state and returns a `ControlResult` (ack, retry with delay, error), storing the tombstone or dispatching through the providers as needed. It knows nothing about how the message arrived and is the main unit-test target.
+- **The transport delivers.** Each transport owns how control messages arrive and how a `ControlResult` is applied (`consumeControl`). For RabbitMQ that means monitoring the control queue: prefetch, ack, republish to TTL retry queues, dead-letter to the error queue, reconnects, graceful shutdown. Retries are delayed by the broker (TTL retry queues), never by a consumer staying alive.
+- Any consumer can process any control message; all it needs is access to the broker and the outbox storage. The process that opened the session may die right after commit.
+- Transports where the platform delivers messages (e.g. a future SQS transport with Lambda triggers) can expose a single-message entry point inside that transport; core does not change.
+
+Because operations are stored in the outbox **after** the convention has run, re-dispatch by the control message produces byte-identical messages, and changing convention config never affects already-committed messages.
+
+## Core Interfaces (sketch)
+
+```typescript
+interface OutboxRecord {
+  id: string; // sessionId
+  dispatched: boolean;
+  dispatchedAt?: Date;
+  transportOperations: TransportOperation[];
+}
+
+interface TransportOperation {
+  messageId: string;
+  intent: 'send' | 'publish';
+  destination?: string; // logical destination for send; absent for publish
+  topic?: string; // publish only: where to publish, interpreted by the routing topology; absent for send
+  messageType: string; // as resolved by the convention
+  headers: Record<string, string>; // as built by the convention
+  body: Uint8Array;
+  properties: { contentType: string; correlationId?: string; replyTo?: string }; // mapped to native transport properties
+}
+
+interface MessageConvention {
+  readonly name: string; // e.g. 'zusammen', 'nservicebus'
+  toOperation(input: OutgoingMessage, ctx: ConventionContext): TransportOperation; // throws on unresolvable type
+}
+
+interface ControlMessage {
+  sessionId: string;
+  remainingCommitDurationMs: number;
+  commitDelayIncrementMs: number;
+  attempt: number;
+}
+
+interface PersistenceProvider<TCtx> {
+  begin(): Promise<TCtx>;
+  storeOutbox(record: OutboxRecord, ctx: TCtx): Promise<void>; // insert; duplicate key → SessionCommitConflictError
+  commit(ctx: TCtx): Promise<void>;
+  rollback(ctx: TCtx): Promise<void>;
+  get(sessionId: string): Promise<OutboxRecord | null>;
+  markDispatched(sessionId: string): Promise<void>;
+  storeTombstone(sessionId: string): Promise<'stored' | 'exists'>;
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+}
+
+type ControlResult = { kind: 'ack' } | { kind: 'retry'; delayMs: number; next: ControlMessage } | { kind: 'error'; error: Error };
+
+interface TransportProvider {
+  dispatch(operations: TransportOperation[]): Promise<void>; // with publisher confirms
+  sendControl(message: ControlMessage): Promise<void>; // with publisher confirms
+  consumeControl(handler: (message: ControlMessage) => Promise<ControlResult>): Promise<() => Promise<void>>; // returns stop
+  validateConvention?(convention: MessageConvention): void; // lets a topology reject an incompatible convention at startup
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+}
+```
+
+The transport maps `ControlResult` to AMQP actions; no delivery tags leak into core.
+
+### User-facing API
+
+```typescript
+interface TransactionalSession<TCtx> {
+  readonly sessionId: string;
+  readonly transactionContext: TCtx; // e.g., MongoDB ClientSession to pass to user operations
+  send<T>(destination: string, message: T, options?: SendOptions): Promise<void>; // convention runs now, operation buffered in memory
+  publish<T>(message: T, options?: PublishOptions): Promise<void>; // convention runs now, operation buffered in memory
+}
+
+interface SendOptions {
+  messageType?: string;
+  messageId?: string;
+  headers?: Record<string, string>;
+}
+
+interface PublishOptions {
+  messageType?: string;
+  topic?: string; // native publish target, see the routing topology; required by the NServiceBus topologies unless registered
+  messageId?: string;
+  headers?: Record<string, string>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+}
+
+// Default: Zusammen convention + Zusammen topology
+const factory = createSessionFactory({ persistence, transport, maxCommitDurationMs: 15_000 });
+await factory.start(); // connects providers and starts consuming the control queue
+const session = await factory.open({ maxCommitDurationMs?: number }); // throws if the factory is not started
+```
+
+Opting into NServiceBus compatibility:
+
+```typescript
+import { nserviceBusConvention } from '@zusammen/nservicebus';
+import { RabbitMQTransportProvider } from '@zusammen/rabbitmq';
+import { nserviceBusConventionalTopology } from '@zusammen/rabbitmq/nservicebus';
+
+const transport = new RabbitMQTransportProvider({ url, topology: nserviceBusConventionalTopology() });
+const factory = createSessionFactory({
+  persistence,
+  transport,
+  convention: nserviceBusConvention({
+    endpointName: 'Sales.Api',
+    messageTypes: { OrderPlaced: 'Sales.Messages.OrderPlaced', PlaceOrder: 'Sales.Messages.PlaceOrder' },
+  }),
+});
+```
+
+The factory calls `transport.validateConvention(convention)` at startup; the NServiceBus RabbitMQ topologies throw if the convention is not `nservicebus`, so a half-configured setup fails fast.
+
+## Key Design Decisions
+
+1. **One outbox document per session**, `_id = sessionId` — enables the tombstone and atomic `markDispatched`.
+2. **Commit window**: `maxCommitDurationMs` default 15 s, configurable per factory and per session.
+3. **Retry delay**: exponential backoff (`commitDelayIncrementMs` doubles per attempt, capped), carried in the control message.
+4. **RabbitMQ delays without plugins**: per-delay-level retry queues with a message TTL that dead-letter back to the control queue.
+5. **Error queue**: control messages exceeding max attempts (for reasons other than the commit window) go to `zusammen.control.error`.
+6. **Cleanup**: TTL index on `dispatchedAt` (configurable retention, default 7 days).
+7. **Wire format is pluggable**: `MessageConvention` + per-transport `RoutingTopology`; the default is a minimal Zusammen format, NServiceBus is opt-in.
+8. **`mandatory` only for sends**: an unroutable send is a dispatch failure (retried by the control message); an event with no subscribers is legitimate and must not fail.
+9. **TypeScript target**: ES2023, Node 22+ (ESM + CJS builds via tsup).
+10. **Every sender is a processor**: there is no separate processor role. `factory.start()` connects the providers and starts the transport's control message processing (for RabbitMQ: monitoring the control queue as one of the competing consumers), so any process that can open sessions also processes control messages. `open()` before `start()` throws. NServiceBus's separate `ProcessorEndpoint` exists for licensing reasons, not architectural ones.
+11. **Control queue per factory**: the control queue name is configurable (default `zusammen.control`), so multiple factories in one process, or multiple applications on one broker, stay independent.
+12. **Read-your-commit on the control path**: the control handler reads outbox records with consistency guarantees that see any committed transaction (MongoDB: primary read preference, `majority` read and write concern), so a committed record is never mistaken for a missing one.
+13. **Serverless with RabbitMQ is deferred**: e.g. Amazon MQ + Lambda event-source mappings. Serverless support is expected to come naturally with an SQS transport, where Lambda triggers are the normal way to consume.
+
+## Default Zusammen Wire Format
+
+Deliberately minimal, so any consumer (Node, .NET, Python, …) can read it without special libraries.
+
+### Convention
+
+- Headers:
+  - `zusammen.message-id` — UUID, also the native message ID (AMQP `message_id`)
+  - `zusammen.message-type` — resolved type name
+  - `zusammen.intent` — `send` or `publish`
+  - `zusammen.time-sent` — ISO 8601 UTC
+  - `zusammen.session-id` — originating transactional session
+  - user-supplied headers merged last; cannot override `zusammen.*`
+- Message type resolution: `options.messageType` → factory registry → class name (`message.constructor.name`, unless it is `Object`) → `UnknownMessageTypeError` at `send`/`publish` time.
+- Body: UTF-8 JSON, property names preserved as-is, `content_type: application/json`. Pluggable serializer.
+
+### RabbitMQ topology
+
+- Send: default exchange, routing key = destination queue name, `mandatory: true`.
+- Publish: durable topic exchange `zusammen.events` (declared on connect), routing key = `topic` if supplied (option or factory `topics` registry), otherwise the message type. Subscribers bind their own queues.
+- AMQP properties: `message_id`, `content_type`, `type` = message type, `delivery_mode: 2`, `correlation_id`/`reply_to` when set by the convention.
+
+## NServiceBus Compatibility (opt-in)
+
+Enabled via `@zusammen/nservicebus` + `@zusammen/rabbitmq/nservicebus`. When enabled, messages dispatched by Zusammen **must** be consumable by NServiceBus endpoints using the RabbitMQ transport, per the [native integration](https://docs.particular.net/transports/rabbitmq/native-integration) guidance. Internal formats (outbox document, control message) are never NServiceBus-specific.
+
+### Convention (`@zusammen/nservicebus`, transport-agnostic)
+
+Required headers:
+
+- `NServiceBus.MessageId` — same value as the native message ID
+- `NServiceBus.EnclosedMessageTypes` — .NET `FullName` of the message type (`Namespace.TypeName`) **when explicitly mapped**; NServiceBus maps FullName to any loaded type regardless of assembly. When not mapped, the header is omitted and the receiver derives it from `zusammen.message-type` (see below)
+- `NServiceBus.ContentType` — `application/json`
+- `NServiceBus.MessageIntent` — `Send` or `Publish`
+- `NServiceBus.TimeSent` — UTC, format `yyyy-MM-dd HH:mm:ss:ffffff Z` (note the `:` before microseconds; JS only has ms precision, pad with zeros)
+
+Set by default (recommended):
+
+- `NServiceBus.ConversationId` — new UUID per session unless supplied
+- `NServiceBus.CorrelationId` — defaults to the message ID unless supplied
+- `NServiceBus.OriginatingEndpoint` — configured `endpointName`
+- `NServiceBus.OriginatingMachine` — `os.hostname()`
+- `NServiceBus.ReplyToAddress` — only if the user configures a reply queue
+
+Not set: `NServiceBus.Version` (we are not NServiceBus); user-supplied headers are merged last and may not override `MessageId`/`MessageIntent`.
+
+Message type mapping — JS has no .NET types. The NServiceBus convention **always** sets `zusammen.message-type` (resolved like the default convention: option → registry → class name) and additionally sets `NServiceBus.EnclosedMessageTypes` only when an explicit .NET FullName is available:
+
+1. `options.messageType` on `send`/`publish`
+2. The `messageTypes` registry, keyed by class name / string tag
+3. Otherwise `EnclosedMessageTypes` is omitted
+
+Contract: **no `EnclosedMessageTypes` header means "derive it from `zusammen.message-type`"**. The receiving NServiceBus endpoint must have the `Zusammen.NServiceBus` behavior installed (see below); without it, the message fails on the receiver and goes to its error queue. The value is never copied into `EnclosedMessageTypes`, so the behavior never has to guess whether a value is a real FullName.
+
+The fallback applies to sends and publishes alike for type resolution; publish **routing** never depends on the type (see `topic` below).
+
+Body serialization:
+
+- UTF-8 JSON, no `$type` property (type comes from the header).
+- NServiceBus's default `SystemJsonSerializer` (System.Text.Json) matches property names **case-sensitively**, so camelCase JS objects would not bind to PascalCase .NET properties. Default: serialize property names as **PascalCase**; configurable (`propertyNaming: 'pascal' | 'preserve'`) for receivers configured with camelCase options.
+- Dates as ISO 8601 strings; `bigint` rejected unless a custom serializer is supplied.
+
+### RabbitMQ topologies (`@zusammen/rabbitmq/nservicebus`)
+
+AMQP properties:
+
+| Property         | Value                                               | Notes                                                                      |
+| ---------------- | --------------------------------------------------- | -------------------------------------------------------------------------- |
+| `message_id`     | operation `messageId` (UUID)                        | **Required** — the transport throws without it (retries, dedup rely on it) |
+| `content_type`   | `application/json`                                  | Populates `NServiceBus.ContentType` on newer transport versions            |
+| `delivery_mode`  | `2` (persistent)                                    |                                                                            |
+| `type`           | message type FullName                               | Mirrors what the .NET transport sets (verify)                              |
+| `correlation_id` | same as `NServiceBus.CorrelationId`                 | Optional (verify mapping)                                                  |
+| `reply_to`       | same as `NServiceBus.ReplyToAddress`, if configured | Optional (verify mapping)                                                  |
+| `headers`        | NServiceBus headers, all string values              |                                                                            |
+
+Routing:
+
+| Topology     | Send                                                                | Publish (`topic` = …)                                                            |
+| ------------ | ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Conventional | publish to the fanout exchange named after the destination endpoint | the name of the fanout exchange to publish to, e.g. `Sales.Messages:OrderPlaced` |
+| Direct       | default exchange, routing key = destination endpoint                | the routing key on `amq.topic`, e.g. `Sales.Messages.OrderPlaced`                |
+
+- **Publish target is explicit, never derived from the message type.** The user supplies `topic` per call or via the factory `topics` registry (`topics: { OrderPlaced: 'Sales.Messages:OrderPlaced' }`); otherwise `publish` throws `UnknownPublishTopicError` before commit. The value is native to the topology and passed through as-is, so switching between conventional and direct topologies means changing the topic values. Users must know the subscriber-side naming (`Namespace:TypeName` exchange for conventional, `Namespace.TypeName` routing key for direct).
+- A mistyped topic is **not** detected: publishes are not `mandatory`, so the event is dropped silently, same as publishing with no subscribers. Called out in the docs.
+- Conventional publish: declare the topic exchange (fanout, durable) before publishing, as subscribers bind their endpoint exchange to it; publishing to an undeclared exchange closes the AMQP channel.
+- Conventional send: the destination exchange is created by the receiving endpoint; if missing, dispatch fails and the control message retries (no auto-declare, to avoid creating unbound exchanges that silently drop messages).
+- Durable exchanges; works with classic or quorum queues (queues are owned by NServiceBus endpoints).
+- **Message type inheritance is out of scope**: Zusammen does not create or bind base-type/interface exchanges. NServiceBus subscribers must subscribe to the concrete event type; subscribers to a base type or interface will not receive Zusammen events.
+
+### Receiver side (`Zusammen.NServiceBus`, NuGet)
+
+A small .NET package for NServiceBus endpoints receiving Zusammen messages, enabled with `endpointConfiguration.EnableZusammen()`:
+
+- A behavior in the `IIncomingPhysicalMessageContext` stage (runs before deserialization): if `NServiceBus.EnclosedMessageTypes` is missing and `zusammen.message-type` is present, resolve the .NET type and set `EnclosedMessageTypes` to its FullName. Messages that already carry `EnclosedMessageTypes` are untouched; the behavior is idempotent across retries.
+- Type resolution: explicit overrides dictionary first, then match the endpoint's known message types by simple `Type.Name`. Two message types with the same simple name and no override → startup failure. Unknown name at runtime → exception → normal NServiceBus recoverability (retries, then error queue).
+- Targets NServiceBus 10 / .NET 10; lives in `dotnet/` in this repo.
+
+**Verification task (phase 8)**: confirm against the NServiceBus.RabbitMQ source the exact conventional exchange naming for nested/generic types, direct-topology routing key format, the AMQP properties the .NET transport sets/reads (`type`, `correlation_id`, `reply_to`, `expiration`), and `TimeSent` parsing tolerance.
+
+## Integrations
+
+### Web frameworks
+
+| Tier | Framework   | Package             | Integration point                                                      |
+| ---- | ----------- | ------------------- | ---------------------------------------------------------------------- |
+| 1    | Express v5  | `@zusammen/express` | middleware                                                             |
+| 1    | Fastify v5  | `@zusammen/fastify` | plugin (`onRequest` / `preSerialization` / `onError` hooks)            |
+| 1    | NestJS      | `@zusammen/nestjs`  | `ZusammenModule`, interceptor, injectable session (Express or Fastify) |
+| 2    | Hono        | `@zusammen/hono`    | middleware                                                             |
+| —    | Koa, others | none                | use the core `withSession` helper                                      |
+
+All adapters are thin wrappers over core:
+
+- `withSession(fn)` opens a session, runs `fn`, commits on success, rolls back on throw.
+- The current session lives in `AsyncLocalStorage`; `getSession()` returns it anywhere in the call stack, adapters also expose it on the request/context object.
+- **Commit before the response is sent.** Committing after the response would report success for a commit that can still fail (e.g. tombstone conflict). Adapters commit in a hook that runs before serialization/sending, and map commit failures to an error response.
+- Opt-in per route (not every request needs a session); a global mode is available.
+
+### Deployment
+
+- At least one started factory must be processing the control queue. In the common deployment every web instance does it (every sender is a processor).
+- Instances can stop or crash at any time after commit; pending control messages are handled by any other instance, or by the next one to start.
+- Serverless deployments with RabbitMQ are not supported for now (decision 13).
+
+## NServiceBus TransactionalSession Conformance
+
+The [NServiceBus TransactionalSession acceptance tests](https://github.com/Particular/NServiceBus.TransactionalSession/tree/main/src/NServiceBus.TransactionalSession.AcceptanceTests) can't run against Zusammen (they drive the .NET API, depend on NServiceBus testing persistence and pipeline internals). Instead they serve as a behavioral spec:
+
+- `docs/nservicebus-conformance.md` maps every upstream `When_*.cs` test to a Zusammen test or marks it not applicable, with a reason.
+- A scheduled CI job lists the upstream test files (`gh api`) and fails if any is missing from the matrix, forcing a decision whenever NServiceBus adds behavior.
+
+## Dependencies
+
+- `@zusammen/core`: none
+- `@zusammen/mongodb`: `mongodb` (peer dependency, current major)
+- `@zusammen/rabbitmq`: `amqplib` (peer dependency)
+- `@zusammen/nservicebus`: `@zusammen/core` (peer dependency) only
+- Framework adapters: the framework itself as a peer dependency (`express`, `fastify`, `@nestjs/common` + `@nestjs/core`, `hono`)
+- `Zusammen.NServiceBus` (NuGet): `NServiceBus`
+- Compat tests: .NET 10 SDK, `NServiceBus`, `NServiceBus.RabbitMQ` (test-only, under `compat/`)
+- Dev: `typescript`, `tsup`, `vitest`, `eslint`, `prettier`, `testcontainers` (MongoDB single-node replica set + RabbitMQ)
+
+## Implementation Phases
+
+1. **Scaffold** — pnpm workspace, TypeScript project references, tsup, Vitest, ESLint/Prettier, `docker-compose.yml` (MongoDB replica set + RabbitMQ) for local dev, CI workflow, scheduled NServiceBus conformance drift check (see below).
+2. **Core contracts** — types, interfaces (`PersistenceProvider`, `TransportProvider`, `MessageConvention`), error classes (`SessionCommitConflictError`, `SessionClosedError`, `UnknownMessageTypeError`, …).
+3. **Core logic + default convention** — `TransactionalSession`, session factory, `ControlMessageHandler` (window/backoff/tombstone), Zusammen convention. Unit tests with in-memory fake providers covering every row of the decision table and every failure scenario.
+4. **MongoDB provider** — `ClientSession` transactions, primary/`majority` read and write concerns on the control path, outbox collection, indexes (TTL), tombstone via duplicate key detection, mapping duplicate key on commit to `SessionCommitConflictError`.
+5. **RabbitMQ provider** — `RoutingTopology` contract + Zusammen topology, confirm channels, control/retry/error queues, `mandatory` + returns handling for sends, consumer with prefetch, `ControlResult` → ack/delay/dead-letter mapping.
+6. **Integration tests (Testcontainers)** — scenarios below, plus concurrent sessions and multiple competing consumers, using the default wire format.
+7. **Framework integrations** — core `withSession` + `AsyncLocalStorage` context; Express, Fastify, NestJS adapters, then Hono. Tests per adapter: commit on success before the response, rollback on error, commit failure mapped to an error response, session reachable via `getSession()` and the request object.
+8. **NServiceBus compatibility (opt-in)** — verify wire details against NServiceBus source; `@zusammen/nservicebus` convention (type registry with `EnclosedMessageTypes` omission when unmapped, header builder, `TimeSent` formatting, PascalCase serializer) with golden-file tests; `@zusammen/rabbitmq/nservicebus` conventional + direct topologies with explicit publish topics and `validateConvention`; `Zusammen.NServiceBus` NuGet package (receiver behavior + type resolution) with unit tests; compat tests against a small .NET 10 NServiceBus endpoint in `compat/` (container or `dotnet` in CI) for both topologies — the endpoint handles Zusammen's commands/events and records what it received for the test to assert on.
+9. **Docs & samples** — README per package, delivery-guarantee guidance for receivers, message type mapping guide, a Node → Node sample (default format) and a Node → NServiceBus sample (opt-in, recommending the NServiceBus Outbox on the receiver for deduplication).
+
+## Verification Scenarios
+
+Core (default wire format):
+
+- Happy path: commit succeeds, messages dispatched once, record marked dispatched.
+- Rollback: nothing dispatched; control message ends in a tombstone.
+- Crash after commit (simulate by skipping immediate dispatch): control message dispatches.
+- Control message before commit: delayed retries, then dispatch.
+- Commit slower than window: tombstone stored, commit throws `SessionCommitConflictError`, no business data persisted.
+- Immediate dispatch failure: control message dispatches.
+- Persistent dispatch failure: control message ends in the error queue.
+- Unresolvable message type: `send`/`publish` throws before commit.
+- Send to a non-existent queue: dispatch fails (returned/unroutable), control message retries, then error queue.
+- Publish with no subscribers: succeeds, record marked dispatched.
+- Re-dispatch by the control message produces identical message ID, headers and body.
+- Empty session: commit sends no control message and stores no outbox record.
+- Committed record not yet visible to the control handler (storage lag): handled as "commit pending", never as "missing" after a successful commit.
+- Two factories in one process with separate control queues: one commits, the other rolls back, independently.
+- `open()` before `start()` throws.
+- Process opening the session dies right after commit: another instance processes the control message and dispatches.
+- Web adapter: handler throws → rollback, no messages; commit fails → error response, client never sees success.
+- Concurrency: many sessions in parallel, multiple consumers; every committed message dispatched at least once.
+
+NServiceBus (opt-in):
+
+- NServiceBus receives a sent command: handler invoked with correct type and property values (PascalCase binding), for both topologies.
+- NServiceBus subscriber receives a published event, for both topologies.
+- NServiceBus receiver with Outbox enabled deduplicates a message dispatched twice (same `message_id`).
+- Unmapped .NET type with the `Zusammen.NServiceBus` behavior installed: send and publish are handled with the correct type.
+- Unmapped .NET type without the behavior: message ends in the NServiceBus error queue.
+- Explicit .NET type mapping: `EnclosedMessageTypes` set, works with and without the behavior.
+- Behavior startup fails on ambiguous simple type names.
+- Publish without a topic (option or registry) under an NServiceBus topology: `publish` throws before commit.
+- NServiceBus topology combined with the default convention: factory fails at startup.

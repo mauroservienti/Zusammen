@@ -1,5 +1,7 @@
 # Zusammen — Node.js Transactional Session Implementation Plan
 
+> **Status: implemented.** All phases below are done and released (first release: `0.1.0-alpha.1`). This document is kept as the design record; the [guides](guides) and package READMEs describe usage.
+
 ## Overview
 
 Zusammen is a transactional session library for Node.js. It atomically couples business data changes with outgoing messages using the Outbox pattern. Dispatch is guaranteed by a **control message** sent through the transport, instead of a background poller. Initial support targets RabbitMQ (transport) and MongoDB (persistence), behind provider interfaces so others can be added.

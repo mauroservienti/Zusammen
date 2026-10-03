@@ -2,6 +2,14 @@
 
 Transactional sessions for Node.js: business data and outgoing messages, committed together. Part of [Zusammen](https://github.com/mauroservienti/Zusammen).
 
+## Install
+
+```sh
+npm install @zusammen/core
+```
+
+Until 1.0, releases are prereleases on the `next` dist-tag: append `@next` to the `@zusammen/*` packages to get the latest one.
+
 Pair it with a persistence (e.g. [`@zusammen/mongodb`](../mongodb)) and a transport (e.g. [`@zusammen/rabbitmq`](../rabbitmq)).
 
 ## Usage

@@ -2,6 +2,10 @@
 
 Lets [NServiceBus](https://particular.net/nservicebus) 10 endpoints consume messages sent by [Zusammen](https://github.com/mauroservienti/Zusammen) from Node.js without explicit .NET type mappings on the sending side.
 
+```sh
+dotnet add package Zusammen.NServiceBus --prerelease
+```
+
 ```csharp
 var endpointConfiguration = new EndpointConfiguration("Billing");
 endpointConfiguration.EnableZusammen();

@@ -30,6 +30,14 @@ Instead of a background poller scanning the outbox, Zusammen uses a **control me
 
 No polling, no extra infrastructure: the broker delivers the guarantee.
 
+## Infrastructure
+
+Zusammen doesn't create collections, indexes, queues or exchanges unless you ask it to. By default, `start()` verifies that everything it needs exists and fails with a list of what's missing. Either provision resources as part of your deployment (each provider exposes `createResources()` for deployment scripts), or let the factory create them:
+
+```typescript
+const factory = createSessionFactory({ persistence, transport, createResources: true });
+```
+
 ## Guarantees
 
 - **Atomic state change**: business data and outgoing messages are committed together or not at all.

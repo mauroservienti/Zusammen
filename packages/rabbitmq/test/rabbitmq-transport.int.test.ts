@@ -3,13 +3,14 @@ import amqp, { type Channel, type ChannelModel, type GetMessage } from 'amqplib'
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
 import {
   createSessionFactory,
+  MissingResourcesError,
   UnroutableMessageError,
   type ControlMessage,
   type ControlResult,
   type TransportOperation,
   type TransportProvider,
 } from '@zusammen/core';
-import { ERROR_HEADER, RabbitMQTransport, ZUSAMMEN_EVENTS_EXCHANGE } from '@zusammen/rabbitmq';
+import { ERROR_HEADER, RabbitMQTransport, ZUSAMMEN_EVENTS_EXCHANGE, zusammenTopology } from '@zusammen/rabbitmq';
 import { InMemoryPersistence } from '@zusammen/testing';
 
 let container: StartedRabbitMQContainer;
@@ -41,6 +42,7 @@ async function connectTransport(options: { controlQueue?: string } = {}) {
   const transport = new RabbitMQTransport({ url, controlQueue, recovery: { initialDelay: 100, maxDelay: 500 } });
   transports.push(transport);
   await transport.connect();
+  await transport.createResources();
   return { transport, controlQueue };
 }
 
@@ -75,6 +77,33 @@ const control = (sessionId = unique('session')): ControlMessage => ({
   commitDelayIncrementMs: 1_000,
   attempt: 1,
   failures: 0,
+});
+
+describe('rabbitmq transport: resources', () => {
+  test('creates nothing by default; verification lists every missing exchange and queue', async () => {
+    const controlQueue = unique('control');
+    const eventsExchange = unique('events');
+    const transport = new RabbitMQTransport({ url, controlQueue, topology: zusammenTopology({ eventsExchange }) });
+    transports.push(transport);
+    await transport.connect();
+
+    const verification = transport.verifyResources();
+    await expect(verification).rejects.toBeInstanceOf(MissingResourcesError);
+    const { resources } = (await verification.catch((error: unknown) => error)) as MissingResourcesError;
+    expect(resources).toEqual([
+      `RabbitMQ exchange '${eventsExchange}'`,
+      `RabbitMQ queue '${controlQueue}'`,
+      `RabbitMQ queue '${controlQueue}.error'`,
+      ...[1, 2, 4, 8, 16, 32, 64].map((level) => `RabbitMQ queue '${controlQueue}.delay.${String(level)}s'`),
+    ]);
+  });
+
+  test('verification passes once resources are created; creating them twice is fine', async () => {
+    const { transport } = await connectTransport();
+    await transport.createResources();
+
+    await expect(transport.verifyResources()).resolves.toBeUndefined();
+  });
 });
 
 describe('rabbitmq transport: dispatch', () => {
@@ -262,6 +291,8 @@ describe('rabbitmq transport with transactional sessions', () => {
     const flakyTransport: TransportProvider = {
       connect: () => transport.connect(),
       disconnect: () => transport.disconnect(),
+      createResources: () => transport.createResources(),
+      verifyResources: () => transport.verifyResources(),
       sendControl: (message) => transport.sendControl(message, 0),
       consumeControl: (handler) => transport.consumeControl(handler),
       dispatch: (operations) => {
@@ -275,6 +306,7 @@ describe('rabbitmq transport with transactional sessions', () => {
     const factory = createSessionFactory({
       persistence: new InMemoryPersistence(),
       transport: flakyTransport,
+      createResources: true,
       controlTiming: { initialCommitDelayIncrementMs: 500 },
     });
     await factory.start();

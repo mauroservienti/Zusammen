@@ -145,7 +145,7 @@ The factory calls `transport.validateConvention(convention)` at startup; the NSe
 1. **One outbox document per session**, `_id = sessionId` — enables the tombstone and atomic `markDispatched`.
 2. **Commit window**: `maxCommitDurationMs` default 15 s, configurable per factory and per session.
 3. **Retry delay**: while waiting for a commit, the delay starts at 1 s and doubles per attempt, capped at 10 s and at the remaining window, so the last retry lands exactly when the window expires. Failures (dispatch or storage errors) are counted separately in `ControlMessage.failures`, retried with their own backoff (1 s doubling, capped at 60 s), and never consume the commit window. All values are configurable via `controlTiming`.
-4. **RabbitMQ delays without plugins**: one classic queue per delay level (1, 2, 4 … 64 s) with a queue-level TTL that dead-letters back to the control queue; requested delays round up to the next level (never shorter, so commits always get at least their full window). Per-message TTLs on a shared queue would only expire at the head. Control and error queues are quorum queues by default. Connection recovery uses amqplib's built-in recovery, re-declaring topology and resuming the consumer after every reconnect.
+4. **RabbitMQ delays without plugins**: one classic queue per delay level (1, 2, 4 … 64 s) with a queue-level TTL that dead-letters back to the control queue; requested delays round up to the next level (never shorter, so commits always get at least their full window). Per-message TTLs on a shared queue would only expire at the head. Control and error queues are quorum queues by default. Connection recovery uses amqplib's built-in recovery, reopening channels and resuming the consumer after every reconnect (resources are durable and never declared on reconnect).
 5. **Error queue**: after `maxFailures` (default 10) the handler returns `error` and the transport moves the control message to `zusammen.control.error`.
 6. **Cleanup**: TTL index on `dispatchedAt` (configurable retention, default 7 days).
 7. **Wire format is pluggable**: `MessageConvention` + per-transport `RoutingTopology`; the default is a minimal Zusammen format, NServiceBus is opt-in.
@@ -155,6 +155,7 @@ The factory calls `transport.validateConvention(convention)` at startup; the NSe
 11. **Control queue per factory**: the control queue name is configurable (default `zusammen.control`), so multiple factories in one process, or multiple applications on one broker, stay independent.
 12. **Read-your-commit on the control path**: the control handler reads outbox records with consistency guarantees that see any committed transaction (MongoDB: primary read preference, `majority` read and write concern), so a committed record is never mistaken for a missing one.
 13. **Serverless with RabbitMQ is deferred**: e.g. Amazon MQ + Lambda event-source mappings. Serverless support is expected to come naturally with an SQS transport, where Lambda triggers are the normal way to consume.
+14. **Resources are user-owned by default**: providers never create collections, indexes, queues or exchanges unless `createSessionFactory({ createResources: true })` is set. By default `start()` verifies that everything exists and fails with `MissingResourcesError` listing all missing resources (a missing MongoDB TTL index is only logged). Providers expose `createResources()` / `verifyResources()` so deployment scripts can provision resources without starting a factory.
 
 ## Default Zusammen Wire Format
 
@@ -175,7 +176,7 @@ Deliberately minimal, so any consumer (Node, .NET, Python, …) can read it with
 ### RabbitMQ topology
 
 - Send: default exchange, routing key = destination queue name, `mandatory: true`.
-- Publish: durable topic exchange `zusammen.events` (declared on connect), routing key = `topic` if supplied (option or the convention's `topics` registry), otherwise the message type. Subscribers bind their own queues.
+- Publish: durable topic exchange `zusammen.events`, routing key = `topic` if supplied (option or the convention's `topics` registry), otherwise the message type. Subscribers bind their own queues.
 - AMQP properties: `message_id`, `content_type`, `type` = message type, `delivery_mode: 2`, `correlation_id`/`reply_to` when set by the convention.
 
 ## NServiceBus Compatibility (opt-in)
@@ -241,7 +242,7 @@ Routing:
 
 - **Publish target is explicit, never derived from the message type.** The user supplies `topic` per call or via the NServiceBus convention's `topics` registry (`topics: { OrderPlaced: 'Sales.Messages:OrderPlaced' }`); otherwise the convention throws `UnknownPublishTopicError` at `publish` time, before commit (topologies only run at dispatch, too late to fail fast). The value is native to the topology and passed through as-is, so switching between conventional and direct topologies means changing the topic values. Users must know the subscriber-side naming (`Namespace:TypeName` exchange for conventional, `Namespace.TypeName` routing key for direct).
 - A mistyped topic is **not** detected: publishes are not `mandatory`, so the event is dropped silently, same as publishing with no subscribers. Called out in the docs.
-- Conventional publish: declare the topic exchange (fanout, durable) before publishing, as subscribers bind their endpoint exchange to it; publishing to an undeclared exchange closes the AMQP channel.
+- Conventional publish: the topic exchange (fanout, durable) must exist, as subscribers bind their endpoint exchange to it; NServiceBus subscribers create it when subscribing. Publishing to a missing exchange closes the AMQP channel and fails the dispatch, so with resource creation off and no subscriber yet, publishes fail until the exchange exists. With `createResources: true`, the topology declares the exchanges for the topics in the convention's `topics` registry (phase 8 decides how to handle topics passed per call).
 - Conventional send: the destination exchange is created by the receiving endpoint; if missing, dispatch fails and the control message retries (no auto-declare, to avoid creating unbound exchanges that silently drop messages).
 - Durable exchanges; works with classic or quorum queues (queues are owned by NServiceBus endpoints).
 - **Message type inheritance is out of scope**: Zusammen does not create or bind base-type/interface exchanges. NServiceBus subscribers must subscribe to the concrete event type; subscribers to a base type or interface will not receive Zusammen events.

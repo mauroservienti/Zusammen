@@ -13,6 +13,10 @@ export interface ControlQueueNames {
   delay(levelSeconds: number): string;
 }
 
+export function allControlQueues(names: ControlQueueNames): string[] {
+  return [names.control, names.error, ...DELAY_LEVELS_SECONDS.map((level) => names.delay(level))];
+}
+
 export function controlQueueNames(control: string): ControlQueueNames {
   return {
     control,

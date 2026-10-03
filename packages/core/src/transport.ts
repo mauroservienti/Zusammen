@@ -8,6 +8,10 @@ export type StopControlProcessing = () => Promise<void>;
 export interface TransportProvider {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
+  /** Creates the resources the transport needs (e.g. queues, exchanges); idempotent. Requires `connect()`. */
+  createResources?(): Promise<void>;
+  /** Throws {@link MissingResourcesError} if resources are missing. Requires `connect()`. */
+  verifyResources?(): Promise<void>;
 
   /** Resolves only once the broker has accepted every operation. Unroutable sends reject with {@link UnroutableMessageError}. */
   dispatch(operations: readonly TransportOperation[]): Promise<void>;

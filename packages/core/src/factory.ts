@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createControlMessageHandler, resolveControlTiming, type ControlTimingOptions } from './control-handler.js';
-import { FactoryNotStartedError, ZusammenError } from './errors.js';
+import { FactoryNotStartedError, MissingResourcesError, ZusammenError } from './errors.js';
 import { silentLogger } from './logger.js';
 import {
   DEFAULT_MAX_COMMIT_DURATION_MS,
@@ -27,6 +27,7 @@ export function createSessionFactory<TContext>(
 ): SessionFactory<TContext> {
   const maxCommitDurationMs = validateDuration(options.maxCommitDurationMs ?? DEFAULT_MAX_COMMIT_DURATION_MS);
   const timing = resolveControlTiming(options.controlTiming);
+  const createResources = options.createResources ?? false;
   const deps: SessionDependencies<TContext> = {
     persistence: options.persistence,
     transport: options.transport,
@@ -53,15 +54,26 @@ export function createSessionFactory<TContext>(
       }
       deps.transport.validateConvention?.(deps.convention);
       await deps.persistence.connect();
-      await deps.transport.connect();
-      stopControl = await deps.transport.consumeControl(
-        createControlMessageHandler({
-          persistence: deps.persistence,
-          transport: deps.transport,
-          logger: deps.logger,
-          timing,
-        }),
-      );
+      try {
+        await deps.transport.connect();
+        if (createResources) {
+          await deps.persistence.createResources?.();
+          await deps.transport.createResources?.();
+        }
+        await verifyResources(deps.persistence, deps.transport);
+        stopControl = await deps.transport.consumeControl(
+          createControlMessageHandler({
+            persistence: deps.persistence,
+            transport: deps.transport,
+            logger: deps.logger,
+            timing,
+          }),
+        );
+      } catch (error) {
+        await deps.transport.disconnect().catch(() => undefined);
+        await deps.persistence.disconnect().catch(() => undefined);
+        throw error;
+      }
     },
 
     stop,
@@ -88,6 +100,22 @@ export function createSessionFactory<TContext>(
       }
     },
   };
+}
+
+// Reports everything missing at once, not only the first provider's resources
+async function verifyResources(...providers: { verifyResources?(): Promise<void> }[]): Promise<void> {
+  const missing: string[] = [];
+  for (const provider of providers) {
+    try {
+      await provider.verifyResources?.();
+    } catch (error) {
+      if (!(error instanceof MissingResourcesError)) throw error;
+      missing.push(...error.resources);
+    }
+  }
+  if (missing.length > 0) {
+    throw new MissingResourcesError(missing);
+  }
 }
 
 function validateDuration(value: number): number {

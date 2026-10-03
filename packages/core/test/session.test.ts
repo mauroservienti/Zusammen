@@ -3,6 +3,7 @@ import {
   createSessionFactory,
   FactoryNotStartedError,
   IncompatibleConventionError,
+  MissingResourcesError,
   SessionClosedError,
   SessionCommitConflictError,
   type CreateSessionFactoryOptions,
@@ -237,6 +238,33 @@ describe('session factory', () => {
 
     await expect(factory.start()).rejects.toBeInstanceOf(IncompatibleConventionError);
     expect(transport.connected).toBe(false);
+  });
+
+  test('missing resources fail the start, listing everything missing, and leave nothing connected', async () => {
+    const persistence = new InMemoryPersistence();
+    const transport = new InMemoryTransport();
+    persistence.resourcesExist = false;
+    transport.resourcesExist = false;
+    const factory = createSessionFactory({ persistence, transport });
+
+    const start = factory.start();
+    await expect(start).rejects.toBeInstanceOf(MissingResourcesError);
+    await expect(start).rejects.toMatchObject({ resources: ['in-memory outbox', 'in-memory control queue'] });
+    expect(persistence.connected).toBe(false);
+    expect(transport.connected).toBe(false);
+    expect(transport.handler).toBeUndefined();
+  });
+
+  test('resources are created only when enabled', async () => {
+    const persistence = new InMemoryPersistence();
+    const transport = new InMemoryTransport();
+    persistence.resourcesExist = false;
+    transport.resourcesExist = false;
+    const factory = createSessionFactory({ persistence, transport, createResources: true });
+
+    await factory.start();
+    expect(persistence.resourcesExist).toBe(true);
+    expect(transport.resourcesExist).toBe(true);
   });
 
   test('rejects invalid commit durations', () => {

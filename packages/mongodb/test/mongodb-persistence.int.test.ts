@@ -24,6 +24,7 @@ async function createPersistence(options: { retentionMs?: number } = {}) {
   const databaseName = `zusammen_${String(++database)}`;
   const persistence = new MongoDBPersistence({ client, databaseName, ...options });
   await persistence.connect();
+  await persistence.createResources();
   return { persistence, databaseName };
 }
 
@@ -55,9 +56,44 @@ describe('mongodb persistence', () => {
     const { databaseName } = await createPersistence({ retentionMs: 60_000 });
     const updated = new MongoDBPersistence({ client, databaseName, retentionMs: 120_000 });
     await updated.connect();
+    await updated.createResources();
 
     const indexes = await updated.collection.indexes();
     expect(indexes.find((index) => index.name === 'zusammen_dispatched_ttl')?.expireAfterSeconds).toBe(120);
+  });
+
+  test('creates nothing by default; verification reports the missing collection', async () => {
+    const databaseName = `zusammen_${String(++database)}`;
+    const persistence = new MongoDBPersistence({ client, databaseName });
+    await persistence.connect();
+
+    await expect(persistence.verifyResources()).rejects.toMatchObject({
+      name: 'MissingResourcesError',
+      resources: [`MongoDB collection '${databaseName}.zusammen_outbox'`],
+    });
+    expect(await client.db(databaseName).listCollections().toArray()).toEqual([]);
+  });
+
+  test('verification passes once resources exist; creating them twice is fine', async () => {
+    const { persistence } = await createPersistence();
+    await persistence.createResources();
+
+    await expect(persistence.verifyResources()).resolves.toBeUndefined();
+  });
+
+  test('a missing TTL index is only a warning', async () => {
+    const databaseName = `zusammen_${String(++database)}`;
+    await client.db(databaseName).createCollection('zusammen_outbox');
+    const warnings: string[] = [];
+    const persistence = new MongoDBPersistence({
+      client,
+      databaseName,
+      logger: { debug() {}, info() {}, error() {}, warn: (message) => warnings.push(message) },
+    });
+    await persistence.connect();
+
+    await expect(persistence.verifyResources()).resolves.toBeUndefined();
+    expect(warnings).toEqual([expect.stringContaining('no TTL index')]);
   });
 
   test('stores headers with dots and dollars as key/value pairs', async () => {

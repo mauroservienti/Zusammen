@@ -7,11 +7,13 @@ export interface Route {
   routingKey: string;
 }
 
-/** Decides where outgoing messages go and which exchanges exist. */
+/** Decides where outgoing messages go and which exchanges it needs. */
 export interface RoutingTopology {
   readonly name: string;
-  /** Declares the exchanges the topology publishes to; called after every (re)connect. */
-  declare(channel: Channel): Promise<void>;
+  /** Exchanges that must exist before publishing, verified at startup. */
+  requiredExchanges(): string[];
+  /** Declares the required exchanges; only called when resource creation is enabled. */
+  createResources(channel: Channel): Promise<void>;
   route(operation: TransportOperation): Route;
   /** Rejects conventions the topology can't route, at startup. */
   validateConvention?(convention: MessageConvention): void;
@@ -32,7 +34,8 @@ export function zusammenTopology(options: ZusammenTopologyOptions = {}): Routing
   const eventsExchange = options.eventsExchange ?? ZUSAMMEN_EVENTS_EXCHANGE;
   return {
     name: 'zusammen',
-    async declare(channel) {
+    requiredExchanges: () => [eventsExchange],
+    async createResources(channel) {
       await channel.assertExchange(eventsExchange, 'topic', { durable: true });
     },
     route(operation) {

@@ -1,4 +1,5 @@
 import {
+  MissingResourcesError,
   SessionCommitConflictError,
   type ControlMessage,
   type ControlMessageHandler,
@@ -25,6 +26,8 @@ export class InMemoryPersistence implements PersistenceProvider<InMemoryTransact
   /** Runs inside `commit` before the conflict check, to interleave control message processing. */
   beforeCommit: (() => Promise<void>) | undefined;
   connected = false;
+  /** Whether the provider's resources exist; tests can set it to false to simulate an unprovisioned store. */
+  resourcesExist = true;
 
   connect(): Promise<void> {
     this.connected = true;
@@ -34,6 +37,15 @@ export class InMemoryPersistence implements PersistenceProvider<InMemoryTransact
   disconnect(): Promise<void> {
     this.connected = false;
     return Promise.resolve();
+  }
+
+  createResources(): Promise<void> {
+    this.resourcesExist = true;
+    return Promise.resolve();
+  }
+
+  verifyResources(): Promise<void> {
+    return this.resourcesExist ? Promise.resolve() : Promise.reject(new MissingResourcesError(['in-memory outbox']));
   }
 
   begin(): Promise<InMemoryTransaction> {
@@ -112,6 +124,8 @@ export class InMemoryTransport implements TransportProvider {
   handler: ControlMessageHandler | undefined;
   validateConvention?: (convention: MessageConvention) => void;
   connected = false;
+  /** Whether the transport's resources exist; tests can set it to false to simulate an unprovisioned broker. */
+  resourcesExist = true;
 
   connect(): Promise<void> {
     this.connected = true;
@@ -121,6 +135,17 @@ export class InMemoryTransport implements TransportProvider {
   disconnect(): Promise<void> {
     this.connected = false;
     return Promise.resolve();
+  }
+
+  createResources(): Promise<void> {
+    this.resourcesExist = true;
+    return Promise.resolve();
+  }
+
+  verifyResources(): Promise<void> {
+    return this.resourcesExist
+      ? Promise.resolve()
+      : Promise.reject(new MissingResourcesError(['in-memory control queue']));
   }
 
   dispatch(operations: readonly TransportOperation[]): Promise<void> {

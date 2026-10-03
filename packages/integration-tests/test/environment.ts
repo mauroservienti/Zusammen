@@ -81,6 +81,8 @@ export class Environment {
     const faultyTransport: TransportProvider = {
       connect: () => transport.connect(),
       disconnect: () => transport.disconnect(),
+      createResources: () => transport.createResources(),
+      verifyResources: () => transport.verifyResources(),
       sendControl: (message, delayMs) => transport.sendControl(message, delayMs),
       consumeControl: (handler) => transport.consumeControl(handler),
       dispatch: (operations) => {
@@ -98,6 +100,8 @@ export class Environment {
     const faultyPersistence: PersistenceProvider<ClientSession> = {
       connect: () => persistence.connect(),
       disconnect: () => persistence.disconnect(),
+      createResources: () => persistence.createResources(),
+      verifyResources: () => persistence.verifyResources(),
       begin: () => persistence.begin(),
       storeOutbox: async (record, session) => {
         await faults.beforeStoreOutbox?.();
@@ -119,6 +123,7 @@ export class Environment {
     const factory = createSessionFactory({
       persistence: faultyPersistence,
       transport: faultyTransport,
+      createResources: true,
       maxCommitDurationMs: options.maxCommitDurationMs ?? 3_000,
       controlTiming: {
         initialCommitDelayIncrementMs: 500,

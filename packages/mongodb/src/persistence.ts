@@ -8,7 +8,14 @@ import {
   type MongoClient,
   type TransactionOptions,
 } from 'mongodb';
-import { SessionCommitConflictError, type OutboxRecord, type PersistenceProvider } from '@zusammen/core';
+import {
+  MissingResourcesError,
+  SessionCommitConflictError,
+  silentLogger,
+  type Logger,
+  type OutboxRecord,
+  type PersistenceProvider,
+} from '@zusammen/core';
 import { fromDocument, toDocument, type OutboxDocument } from './documents.js';
 
 export const DEFAULT_OUTBOX_COLLECTION = 'zusammen_outbox';
@@ -18,6 +25,7 @@ const TTL_INDEX_NAME = 'zusammen_dispatched_ttl';
 const DUPLICATE_KEY = 11000;
 const WRITE_CONFLICT = 112;
 const INDEX_OPTIONS_CONFLICT = 85;
+const NAMESPACE_EXISTS = 48;
 const MAX_COMMIT_ATTEMPTS = 3;
 
 export interface MongoDBPersistenceOptions {
@@ -33,6 +41,7 @@ export interface MongoDBPersistenceOptions {
   transactionOptions?: TransactionOptions | undefined;
   /** Whether `disconnect()` closes the client. Defaults to false: the client is usually shared with the application. */
   closeClientOnDisconnect?: boolean | undefined;
+  logger?: Logger | undefined;
 }
 
 /** MongoDB persistence. The transaction context is the `ClientSession` to pass to your own operations. */
@@ -42,6 +51,7 @@ export class MongoDBPersistence implements PersistenceProvider<ClientSession> {
   readonly #retentionMs: number;
   readonly #transactionOptions: TransactionOptions;
   readonly #closeClientOnDisconnect: boolean;
+  readonly #logger: Logger;
 
   constructor(options: MongoDBPersistenceOptions) {
     this.#client = options.client;
@@ -60,6 +70,7 @@ export class MongoDBPersistence implements PersistenceProvider<ClientSession> {
       readPreference: ReadPreference.primary,
     };
     this.#closeClientOnDisconnect = options.closeClientOnDisconnect ?? false;
+    this.#logger = options.logger ?? silentLogger;
   }
 
   /** The outbox collection, e.g. for monitoring. */
@@ -69,7 +80,34 @@ export class MongoDBPersistence implements PersistenceProvider<ClientSession> {
 
   async connect(): Promise<void> {
     await this.#client.connect();
+  }
+
+  /** Creates the outbox collection and its TTL index; updates the TTL if the retention changed. */
+  async createResources(): Promise<void> {
+    try {
+      await this.#collection.db.createCollection(this.#collection.collectionName);
+    } catch (error) {
+      if (!(error instanceof MongoServerError && error.code === NAMESPACE_EXISTS)) throw error;
+    }
     await this.#ensureTtlIndex();
+  }
+
+  /** The outbox collection must exist; a missing TTL index only means records are never cleaned up, so it's logged. */
+  async verifyResources(): Promise<void> {
+    const name = this.#collection.collectionName;
+    const exists = await this.#collection.db.listCollections({ name }, { nameOnly: true }).hasNext();
+    if (!exists) {
+      throw new MissingResourcesError([`MongoDB collection '${this.#collection.dbName}.${name}'`]);
+    }
+    const indexes = await this.#collection.indexes();
+    if (!indexes.some((index) => index.expireAfterSeconds !== undefined && index.key.DispatchedAt === 1)) {
+      this.#logger.warn(
+        'The outbox collection has no TTL index on DispatchedAt; dispatched records are never removed',
+        {
+          collection: `${this.#collection.dbName}.${name}`,
+        },
+      );
+    }
   }
 
   async disconnect(): Promise<void> {

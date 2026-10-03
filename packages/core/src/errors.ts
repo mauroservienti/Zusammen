@@ -65,6 +65,15 @@ export class UnroutableMessageError extends ZusammenError {
   }
 }
 
+/** Resources the providers need (collections, queues, exchanges, …) don't exist and resource creation is off. */
+export class MissingResourcesError extends ZusammenError {
+  constructor(readonly resources: readonly string[]) {
+    super(
+      `Missing resources: ${resources.join(', ')}. Create them as part of your deployment, or enable resource creation (createResources: true).`,
+    );
+  }
+}
+
 /** The transport's routing topology cannot work with the configured convention. */
 export class IncompatibleConventionError extends ZusammenError {
   constructor(

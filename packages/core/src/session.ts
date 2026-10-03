@@ -31,13 +31,18 @@ export interface SessionFactoryOptions<TContext> {
   transport: TransportProvider;
   /** Defaults to the Zusammen convention. */
   convention?: MessageConvention | undefined;
+  /**
+   * Whether `start()` creates the resources providers need. Defaults to false: resources are expected to exist (e.g.
+   * created by a deployment script calling the providers' `createResources()`) and are verified at startup.
+   */
+  createResources?: boolean | undefined;
   /** Defaults to {@link DEFAULT_MAX_COMMIT_DURATION_MS}. */
   maxCommitDurationMs?: number | undefined;
   logger?: Logger | undefined;
 }
 
 export interface SessionFactory<TContext> extends AsyncDisposable {
-  /** Connects the providers and starts control message processing. */
+  /** Connects the providers, creates (if enabled) and verifies resources, and starts control message processing. */
   start(): Promise<void>;
   /** Stops control message processing and disconnects the providers. */
   stop(): Promise<void>;

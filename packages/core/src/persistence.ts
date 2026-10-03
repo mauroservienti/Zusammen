@@ -7,6 +7,10 @@ import type { OutboxRecord } from './outbox.js';
 export interface PersistenceProvider<TContext> {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
+  /** Creates the resources the provider needs (e.g. collections, indexes); idempotent. Requires `connect()`. */
+  createResources?(): Promise<void>;
+  /** Throws {@link MissingResourcesError} if resources are missing. Requires `connect()`. */
+  verifyResources?(): Promise<void>;
 
   begin(): Promise<TContext>;
   /** Inserts the record within the transaction. Fails with {@link SessionCommitConflictError} if the ID exists (tombstone). */

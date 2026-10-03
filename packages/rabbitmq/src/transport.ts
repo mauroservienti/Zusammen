@@ -10,6 +10,7 @@ import amqp, {
   type SocketOptions,
 } from 'amqplib';
 import {
+  MissingResourcesError,
   silentLogger,
   UnroutableMessageError,
   type ControlMessage,
@@ -22,6 +23,7 @@ import {
   type TransportProvider,
 } from '@zusammen/core';
 import {
+  allControlQueues,
   CONTROL_MESSAGE_TYPE,
   controlQueueNames,
   declareControlQueues,
@@ -35,6 +37,7 @@ import { zusammenTopology, type Route, type RoutingTopology } from './topology.j
 
 export const DEFAULT_CONTROL_QUEUE = 'zusammen.control';
 export const ERROR_HEADER = 'zusammen.error';
+const CONSUMER_RESTART_DELAY_MS = 1_000;
 
 export interface RabbitMQTransportOptions {
   url: string | Options.Connect;
@@ -106,6 +109,52 @@ export class RabbitMQTransport implements TransportProvider {
     await connection?.close();
   }
 
+  /** Declares the topology's exchanges and the control, error and delay queues. */
+  async createResources(): Promise<void> {
+    const channel = await this.#requireModel().createChannel();
+    try {
+      await this.#topology.createResources(channel);
+      await declareControlQueues(channel, this.#queues, this.#options.queueType ?? 'quorum');
+    } finally {
+      await channel.close().catch(() => undefined);
+    }
+  }
+
+  async verifyResources(): Promise<void> {
+    const model = this.#requireModel();
+    // A failed passive check closes the channel, so each check gets its own
+    const exists = async (check: (channel: Channel) => Promise<unknown>) => {
+      const channel = await model.createChannel();
+      channel.on('error', () => undefined);
+      try {
+        await check(channel);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        await channel.close().catch(() => undefined);
+      }
+    };
+    const missing: string[] = [];
+    for (const exchange of this.#topology.requiredExchanges()) {
+      if (!(await exists((channel) => channel.checkExchange(exchange))))
+        missing.push(`RabbitMQ exchange '${exchange}'`);
+    }
+    for (const queue of allControlQueues(this.#queues)) {
+      if (!(await exists((channel) => channel.checkQueue(queue)))) missing.push(`RabbitMQ queue '${queue}'`);
+    }
+    if (missing.length > 0) {
+      throw new MissingResourcesError(missing);
+    }
+  }
+
+  #requireModel(): ChannelModel {
+    if (this.#model === undefined) {
+      throw new Error('Not connected to RabbitMQ');
+    }
+    return this.#model;
+  }
+
   validateConvention(convention: MessageConvention): void {
     this.#topology.validateConvention?.(convention);
   }
@@ -140,12 +189,10 @@ export class RabbitMQTransport implements TransportProvider {
     return () => this.#stopConsuming();
   }
 
-  // Runs after every (re)connect: topology, control queues, consumer
+  // Runs after every (re)connect: channels and consumer. Resources are durable and never declared here.
   async #setup(model: ChannelModel): Promise<void> {
     this.#model = model;
-    const channel = await this.#createPublishChannel(model);
-    await this.#topology.declare(channel);
-    await declareControlQueues(channel, this.#queues, this.#options.queueType ?? 'quorum');
+    await this.#createPublishChannel(model);
     if (this.#handler !== undefined) {
       await this.#startConsumer(model);
     }
@@ -239,12 +286,15 @@ export class RabbitMQTransport implements TransportProvider {
         return;
       }
       this.#consumer = undefined;
-      // Channel-level failure on a live connection: resume consuming
-      if (this.#handler !== undefined && this.#model === model) {
-        this.#startConsumer(model).catch((error: unknown) => {
-          this.#logger.error('Failed to restart the control message consumer', { error });
-        });
-      }
+      // Channel-level failure on a live connection (e.g. the queue was deleted): resume consuming, with a delay to
+      // avoid a tight loop while the cause persists
+      setTimeout(() => {
+        if (this.#handler !== undefined && this.#model === model && this.#consumer === undefined) {
+          this.#startConsumer(model).catch((error: unknown) => {
+            this.#logger.error('Failed to restart the control message consumer', { error });
+          });
+        }
+      }, CONSUMER_RESTART_DELAY_MS).unref();
     });
     await channel.prefetch(this.#options.prefetch ?? 10);
     const { consumerTag } = await channel.consume(this.#queues.control, (message) => {

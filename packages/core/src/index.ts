@@ -10,6 +10,7 @@ export type {
 export {
   FactoryNotStartedError,
   IncompatibleConventionError,
+  MissingResourcesError,
   SessionClosedError,
   SessionCommitConflictError,
   UnknownMessageTypeError,

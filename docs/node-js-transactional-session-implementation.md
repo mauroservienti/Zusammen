@@ -313,6 +313,7 @@ GitHub: [mauroservienti/Zusammen](https://github.com/mauroservienti/Zusammen) (p
 - **Squash merges only**: disable merge commits and rebase merging in the repository settings; use the PR title and description as the squash commit message; automatically delete head branches after merge.
 - **Workflow**: work happens on branches pushed to GitHub and merged through squash-merged PRs (`gh pr create`, `gh pr merge --squash`) once CI is green.
 - **Dependency updates**: Dependabot (`.github/dependabot.yml`) for npm, GitHub Actions and NuGet, with grouped weekly updates.
+- **Releases** (`.github/workflows/release.yml`): pushing a SemVer tag without prefix (`1.2.0`, `1.2.0-alpha.1`) on a commit of `main` runs the full CI, then publishes every npm package and `Zusammen.NServiceBus` with that version (one version for everything; nothing is committed back) and creates a GitHub release with generated notes. Stable versions get the npm `latest` dist-tag, prereleases `next`. Credentials: repository secrets `NPM_TOKEN` (granular token, read and write on the `@zusammen` scope) and `NUGET_API_KEY`. npm packages are published with provenance. Re-running a failed release skips what was already published. A tag ruleset (`refs/tags/*.*.*`) lets only repository admins create, move or delete release tags.
 - **License**: MIT (`LICENSE`, `license` in every package, `PackageLicenseExpression` for the NuGet package).
 
 ## Implementation Phases

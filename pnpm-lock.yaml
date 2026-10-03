@@ -196,6 +196,36 @@ importers:
 
   packages/core: {}
 
+  packages/integration-tests:
+    devDependencies:
+      '@testcontainers/mongodb':
+        specifier: ^12.2.0
+        version: 12.2.0
+      '@testcontainers/rabbitmq':
+        specifier: ^12.2.0
+        version: 12.2.0
+      '@zusammen/core':
+        specifier: workspace:^
+        version: link:../core
+      '@zusammen/mongodb':
+        specifier: workspace:^
+        version: link:../mongodb
+      '@zusammen/rabbitmq':
+        specifier: workspace:^
+        version: link:../rabbitmq
+      '@zusammen/testing':
+        specifier: workspace:^
+        version: link:../testing
+      amqplib:
+        specifier: ^2.2.0
+        version: 2.2.0
+      mongodb:
+        specifier: ^7.7.0
+        version: 7.7.0
+      testcontainers:
+        specifier: ^12.2.0
+        version: 12.2.0
+
   packages/mongodb:
     devDependencies:
       '@testcontainers/mongodb':

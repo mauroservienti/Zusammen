@@ -2,7 +2,7 @@
 
 Transactional sessions for Node.js: commit business data and outgoing messages **together**, or not at all.
 
-> **Status: work in progress.** The core library, the MongoDB persistence and the RabbitMQ transport are implemented and tested; end-to-end tests, framework adapters and NServiceBus compatibility are next. Nothing is published to npm yet. See the [implementation plan](docs/node-js-transactional-session-implementation.md).
+> **Status: work in progress.** The core library, the MongoDB persistence and the RabbitMQ transport are implemented and tested end to end, including crash and race scenarios; framework adapters and NServiceBus compatibility are next. Nothing is published to npm yet. See the [implementation plan](docs/node-js-transactional-session-implementation.md).
 
 ## The problem
 

@@ -10,7 +10,14 @@ import {
   type TransportOperation,
   type TransportProvider,
 } from '@zusammen/core';
-import { ERROR_HEADER, RabbitMQTransport, ZUSAMMEN_EVENTS_EXCHANGE, zusammenTopology } from '@zusammen/rabbitmq';
+import {
+  ERROR_HEADER,
+  RabbitMQTransport,
+  ZUSAMMEN_EVENTS_EXCHANGE,
+  zusammenTopology,
+  type RoutingTopology,
+} from '@zusammen/rabbitmq';
+import { nserviceBusConventionalTopology, nserviceBusDirectTopology } from '@zusammen/rabbitmq/nservicebus';
 import { InMemoryPersistence } from '@zusammen/testing';
 
 let container: StartedRabbitMQContainer;
@@ -37,12 +44,21 @@ afterAll(async () => {
   await container.stop();
 });
 
-async function connectTransport(options: { controlQueue?: string } = {}) {
+async function connectTransport(
+  options: { controlQueue?: string; topology?: RoutingTopology; createResources?: boolean } = {},
+) {
   const controlQueue = options.controlQueue ?? unique('control');
-  const transport = new RabbitMQTransport({ url, controlQueue, recovery: { initialDelay: 100, maxDelay: 500 } });
+  const transport = new RabbitMQTransport({
+    url,
+    controlQueue,
+    recovery: { initialDelay: 100, maxDelay: 500 },
+    ...(options.topology !== undefined && { topology: options.topology }),
+  });
   transports.push(transport);
   await transport.connect();
-  await transport.createResources();
+  if (options.createResources !== false) {
+    await transport.createResources();
+  }
   return { transport, controlQueue };
 }
 
@@ -273,6 +289,95 @@ describe('rabbitmq transport: control messages', () => {
       }
     });
     await waitFor(() => Promise.resolve(received.length >= 1));
+  });
+});
+
+describe('rabbitmq transport: NServiceBus topologies', () => {
+  const nsbOperation = (overrides: Partial<TransportOperation>): TransportOperation =>
+    operation({
+      headers: {
+        'NServiceBus.MessageId': 'x',
+        'NServiceBus.EnclosedMessageTypes': 'Sales.Messages.OrderPlaced',
+        'NServiceBus.ContentType': 'application/json',
+        'NServiceBus.CorrelationId': 'c1',
+      },
+      ...overrides,
+    });
+
+  test('conventional send goes to the endpoint exchange with NServiceBus properties', async () => {
+    const { transport } = await connectTransport({ topology: nserviceBusConventionalTopology() });
+    const endpoint = unique('Sales');
+    await channel.assertExchange(endpoint, 'fanout', { autoDelete: true });
+    await channel.assertQueue(endpoint, { autoDelete: true });
+    await channel.bindQueue(endpoint, endpoint, '');
+
+    await transport.dispatch([nsbOperation({ destination: endpoint })]);
+
+    const message = await receive(endpoint);
+    expect(message.properties).toMatchObject({
+      type: 'Sales.Messages.OrderPlaced',
+      correlationId: 'c1',
+      contentType: 'application/json',
+      deliveryMode: 2,
+    });
+  });
+
+  test('conventional publish without subscribers: the missing exchange is not created, the publish succeeds', async () => {
+    const { transport } = await connectTransport({
+      topology: nserviceBusConventionalTopology(),
+      createResources: false,
+    });
+    const topic = unique('Sales.Messages:OrderPlaced');
+
+    await transport.dispatch([nsbOperation({ intent: 'publish', topic })]);
+
+    await expect(
+      (async () => {
+        const probe = await observer.createChannel();
+        probe.on('error', () => undefined);
+        await probe.checkExchange(topic);
+      })(),
+    ).rejects.toThrow();
+  });
+
+  test('conventional publish with resource creation declares the event exchange', async () => {
+    const { transport } = await connectTransport({ topology: nserviceBusConventionalTopology() });
+    const topic = unique('Sales.Messages:OrderPlaced');
+
+    await transport.dispatch([nsbOperation({ intent: 'publish', topic })]);
+
+    await expect(channel.checkExchange(topic)).resolves.toBeDefined();
+  });
+
+  test('conventional publish reaches subscribers bound to the event exchange', async () => {
+    const { transport } = await connectTransport({
+      topology: nserviceBusConventionalTopology(),
+      createResources: false,
+    });
+    const topic = unique('Sales.Messages:OrderPlaced');
+    const subscriber = unique('Billing');
+    // What an NServiceBus subscriber sets up
+    await channel.assertExchange(topic, 'fanout', { autoDelete: true });
+    await channel.assertExchange(subscriber, 'fanout', { autoDelete: true });
+    await channel.bindExchange(subscriber, topic, '');
+    await channel.assertQueue(subscriber, { autoDelete: true });
+    await channel.bindQueue(subscriber, subscriber, '');
+
+    await transport.dispatch([nsbOperation({ intent: 'publish', topic })]);
+
+    expect((await receive(subscriber)).properties.type).toBe('Sales.Messages.OrderPlaced');
+  });
+
+  test('direct publish goes to amq.topic with the topic as routing key', async () => {
+    const { transport } = await connectTransport({ topology: nserviceBusDirectTopology() });
+    const topic = unique('Sales-Messages-OrderPlaced').replaceAll('.', '-');
+    const subscriber = unique('Billing');
+    await channel.assertQueue(subscriber, { autoDelete: true });
+    await channel.bindQueue(subscriber, 'amq.topic', `${topic}.#`);
+
+    await transport.dispatch([nsbOperation({ intent: 'publish', topic })]);
+
+    await receive(subscriber);
   });
 });
 

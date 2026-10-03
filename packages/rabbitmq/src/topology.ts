@@ -1,10 +1,15 @@
-import type { Channel } from 'amqplib';
+import type { Channel, Options } from 'amqplib';
 import type { MessageConvention, TransportOperation } from '@zusammen/core';
 
 /** Where an operation is published. */
 export interface Route {
   exchange: string;
   routingKey: string;
+  /**
+   * The exchange may legitimately not exist yet, e.g. an event exchange created by subscribers: if it's missing, the
+   * message has no subscribers and is skipped. With resource creation enabled, it's declared with this type instead.
+   */
+  optionalExchange?: { type: 'fanout' | 'topic' };
 }
 
 /** Decides where outgoing messages go and which exchanges it needs. */
@@ -17,6 +22,8 @@ export interface RoutingTopology {
   route(operation: TransportOperation): Route;
   /** Rejects conventions the topology can't route, at startup. */
   validateConvention?(convention: MessageConvention): void;
+  /** AMQP properties for an operation; defaults to the operation's ID, type, content type, headers and properties. */
+  publishOptions?(operation: TransportOperation): Options.Publish;
 }
 
 export const ZUSAMMEN_EVENTS_EXCHANGE = 'zusammen.events';

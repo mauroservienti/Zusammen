@@ -69,6 +69,9 @@ export class RabbitMQTransport implements TransportProvider {
   #publishChannel: Promise<ConfirmChannel> | undefined;
   #consumer: { channel: Channel; consumerTag: string } | undefined;
   #handler: ControlMessageHandler | undefined;
+  #createsResources = false;
+  // Optional exchanges known to exist on the current connection
+  readonly #knownExchanges = new Set<string>();
 
   constructor(options: RabbitMQTransportOptions) {
     this.#options = options;
@@ -90,6 +93,7 @@ export class RabbitMQTransport implements TransportProvider {
       this.#model = undefined;
       this.#publishChannel = undefined;
       this.#consumer = undefined;
+      this.#knownExchanges.clear();
     });
     connection.on('reconnect-failed', (error: Error) => {
       this.#logger.error('Giving up reconnecting to RabbitMQ', { error });
@@ -106,11 +110,14 @@ export class RabbitMQTransport implements TransportProvider {
     this.#connection = undefined;
     this.#model = undefined;
     this.#publishChannel = undefined;
+    this.#knownExchanges.clear();
     await connection?.close();
   }
 
   /** Declares the topology's exchanges and the control, error and delay queues. */
   async createResources(): Promise<void> {
+    // From now on, optional exchanges (e.g. event exchanges without subscribers yet) are declared on first use
+    this.#createsResources = true;
     const channel = await this.#requireModel().createChannel();
     try {
       await this.#topology.createResources(channel);
@@ -121,31 +128,53 @@ export class RabbitMQTransport implements TransportProvider {
   }
 
   async verifyResources(): Promise<void> {
-    const model = this.#requireModel();
-    // A failed passive check closes the channel, so each check gets its own
-    const exists = async (check: (channel: Channel) => Promise<unknown>) => {
-      const channel = await model.createChannel();
-      channel.on('error', () => undefined);
-      try {
-        await check(channel);
-        return true;
-      } catch {
-        return false;
-      } finally {
-        await channel.close().catch(() => undefined);
-      }
-    };
     const missing: string[] = [];
     for (const exchange of this.#topology.requiredExchanges()) {
-      if (!(await exists((channel) => channel.checkExchange(exchange))))
+      if (!(await this.#exists((channel) => channel.checkExchange(exchange)))) {
         missing.push(`RabbitMQ exchange '${exchange}'`);
+      }
     }
     for (const queue of allControlQueues(this.#queues)) {
-      if (!(await exists((channel) => channel.checkQueue(queue)))) missing.push(`RabbitMQ queue '${queue}'`);
+      if (!(await this.#exists((channel) => channel.checkQueue(queue)))) missing.push(`RabbitMQ queue '${queue}'`);
     }
     if (missing.length > 0) {
       throw new MissingResourcesError(missing);
     }
+  }
+
+  // A failed passive check closes the channel, so each check gets its own
+  async #exists(check: (channel: Channel) => Promise<unknown>): Promise<boolean> {
+    const channel = await this.#requireModel().createChannel();
+    channel.on('error', () => undefined);
+    try {
+      await check(channel);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      await channel.close().catch(() => undefined);
+    }
+  }
+
+  // Whether to publish to a route whose exchange may not exist; declares it when resource creation is enabled
+  async #ensureOptionalExchange(route: Route): Promise<boolean> {
+    if (route.optionalExchange === undefined || this.#knownExchanges.has(route.exchange)) {
+      return true;
+    }
+    if (!(await this.#exists((channel) => channel.checkExchange(route.exchange)))) {
+      if (!this.#createsResources) {
+        this.#logger.debug('Exchange does not exist, nobody subscribed: skipping', { exchange: route.exchange });
+        return false;
+      }
+      const channel = await this.#requireModel().createChannel();
+      try {
+        await channel.assertExchange(route.exchange, route.optionalExchange.type, { durable: true });
+      } finally {
+        await channel.close().catch(() => undefined);
+      }
+    }
+    this.#knownExchanges.add(route.exchange);
+    return true;
   }
 
   #requireModel(): ChannelModel {
@@ -164,7 +193,11 @@ export class RabbitMQTransport implements TransportProvider {
     await Promise.all(
       operations.map(async (operation) => {
         const route = this.#topology.route(operation);
-        await this.#publish(channel, route, Buffer.from(operation.body), toPublishOptions(operation), {
+        if (!(await this.#ensureOptionalExchange(route))) {
+          return;
+        }
+        const options = this.#topology.publishOptions?.(operation) ?? toPublishOptions(operation);
+        await this.#publish(channel, route, Buffer.from(operation.body), options, {
           mandatory: operation.intent === 'send',
           messageId: operation.messageId,
         });

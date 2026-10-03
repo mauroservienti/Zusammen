@@ -223,39 +223,44 @@ Body serialization:
 
 AMQP properties:
 
-| Property         | Value                                               | Notes                                                                      |
-| ---------------- | --------------------------------------------------- | -------------------------------------------------------------------------- |
-| `message_id`     | operation `messageId` (UUID)                        | **Required** — the transport throws without it (retries, dedup rely on it) |
-| `content_type`   | `application/json`                                  | Populates `NServiceBus.ContentType` on newer transport versions            |
-| `delivery_mode`  | `2` (persistent)                                    |                                                                            |
-| `type`           | message type FullName                               | Mirrors what the .NET transport sets (verify)                              |
-| `correlation_id` | same as `NServiceBus.CorrelationId`                 | Optional (verify mapping)                                                  |
-| `reply_to`       | same as `NServiceBus.ReplyToAddress`, if configured | Optional (verify mapping)                                                  |
-| `headers`        | NServiceBus headers, all string values              |                                                                            |
+Verified against NServiceBus.RabbitMQ 11.2.1 (`BasicPropertiesExtensions`, `MessageConverter`, `ConventionalRoutingTopology`, `DirectRoutingTopology`, `DefaultRoutingKeyConvention`) and NServiceBus 10 (`DateTimeOffsetHelper`, System.Text.Json serializer defaults).
+
+AMQP properties, set like `BasicPropertiesExtensions.Fill`:
+
+| Property         | Value                                                                   | Notes                                                                                                                                                      |
+| ---------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `message_id`     | operation `messageId`                                                   | **Required**: the transport throws without it                                                                                                              |
+| `content_type`   | `NServiceBus.ContentType`, else `application/octet-stream`              | Copied into `NServiceBus.ContentType` on receive                                                                                                           |
+| `delivery_mode`  | `2` (persistent)                                                        |                                                                                                                                                            |
+| `type`           | `NServiceBus.EnclosedMessageTypes` up to the first `,`, **only if set** | On receive, a missing `EnclosedMessageTypes` is filled from `type`: setting it for unmapped types would hide them from the `Zusammen.NServiceBus` behavior |
+| `correlation_id` | `NServiceBus.CorrelationId`                                             | Copied back into the header on receive                                                                                                                     |
+| `reply_to`       | `NServiceBus.ReplyToAddress`, if set                                    | Copied back into the header on receive                                                                                                                     |
+| `headers`        | all operation headers, as strings                                       |                                                                                                                                                            |
 
 Routing:
 
-| Topology     | Send                                                                | Publish (`topic` = …)                                                            |
-| ------------ | ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Conventional | publish to the fanout exchange named after the destination endpoint | the name of the fanout exchange to publish to, e.g. `Sales.Messages:OrderPlaced` |
-| Direct       | default exchange, routing key = destination endpoint                | the routing key on `amq.topic`, e.g. `Sales.Messages.OrderPlaced`                |
+| Topology     | Send                                                 | Publish (`topic` = …)                                                                                                                                                                                 |
+| ------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Conventional | fanout exchange named after the destination endpoint | fanout exchange named `Namespace:TypeName` (`Type.Namespace + ":" + Type.Name`), e.g. `Sales.Messages:OrderPlaced`                                                                                    |
+| Direct       | default exchange, routing key = destination endpoint | routing key on `amq.topic`: the FullName with `.` replaced by `-`, prefixed by non-system base type and interface keys joined with `.`, e.g. `Sales-Messages-OrderPlaced`; subscribers bind `<key>.#` |
 
-- **Publish target is explicit, never derived from the message type.** The user supplies `topic` per call or via the NServiceBus convention's `topics` registry (`topics: { OrderPlaced: 'Sales.Messages:OrderPlaced' }`); otherwise the convention throws `UnknownPublishTopicError` at `publish` time, before commit (topologies only run at dispatch, too late to fail fast). The value is native to the topology and passed through as-is, so switching between conventional and direct topologies means changing the topic values. Users must know the subscriber-side naming (`Namespace:TypeName` exchange for conventional, `Namespace.TypeName` routing key for direct).
-- A mistyped topic is **not** detected: publishes are not `mandatory`, so the event is dropped silently, same as publishing with no subscribers. Called out in the docs.
-- Conventional publish: the topic exchange (fanout, durable) must exist, as subscribers bind their endpoint exchange to it; NServiceBus subscribers create it when subscribing. Publishing to a missing exchange closes the AMQP channel and fails the dispatch, so with resource creation off and no subscriber yet, publishes fail until the exchange exists. With `createResources: true`, the topology declares the exchanges for the topics in the convention's `topics` registry (phase 8 decides how to handle topics passed per call).
-- Conventional send: the destination exchange is created by the receiving endpoint; if missing, dispatch fails and the control message retries (no auto-declare, to avoid creating unbound exchanges that silently drop messages).
-- Durable exchanges; works with classic or quorum queues (queues are owned by NServiceBus endpoints).
-- **Message type inheritance is out of scope**: Zusammen does not create or bind base-type/interface exchanges. NServiceBus subscribers must subscribe to the concrete event type; subscribers to a base type or interface will not receive Zusammen events.
+- **Publish target is explicit, never derived from the message type.** The user supplies `topic` per call or via the NServiceBus convention's `topics` registry (keyed by message type name); otherwise the convention throws `UnknownPublishTopicError` at `publish` time, before commit. The value is native to the topology and passed through as-is, so switching topologies means changing the topic values.
+- A mistyped topic is **not** detected: publishes are not `mandatory`, so the event is dropped silently, same as publishing with no subscribers.
+- **Conventional publish to a missing exchange**: NServiceBus subscribers create the event exchange when subscribing (NServiceBus' own publishers also declare it on every publish). A missing exchange therefore means nobody subscribed: by default the event is skipped like any event without subscribers, and the exchange is not created. With `createResources: true` it's declared (fanout, durable) on first publish, mirroring NServiceBus publishers. Existence is checked with a passive declare and cached per connection.
+- Conventional send: the destination exchange is created by the receiving endpoint; if missing, dispatch fails and the control message retries.
+- **Message type inheritance is out of scope**: Zusammen does not create or bind base-type/interface exchanges. Subscribers to a base type or interface will not receive Zusammen events (conventional); for direct, the topic must include the base type prefix NServiceBus generates.
+- `ConversationId` defaults to the session ID, `CorrelationId` to the message ID; both can be overridden. `NServiceBus.Version` is not set.
 
 ### Receiver side (`Zusammen.NServiceBus`, NuGet)
 
-A small .NET package for NServiceBus endpoints receiving Zusammen messages, enabled with `endpointConfiguration.EnableZusammen()`:
+A small .NET package for NServiceBus 10 endpoints receiving Zusammen messages, enabled with `endpointConfiguration.EnableZusammen()`, in `dotnet/src/Zusammen.NServiceBus`:
 
 - A behavior in the `IIncomingPhysicalMessageContext` stage (runs before deserialization): if `NServiceBus.EnclosedMessageTypes` is missing and `zusammen.message-type` is present, resolve the .NET type and set `EnclosedMessageTypes` to its FullName. Messages that already carry `EnclosedMessageTypes` are untouched; the behavior is idempotent across retries.
-- Type resolution: explicit overrides dictionary first, then match the endpoint's known message types by simple `Type.Name`. Two message types with the same simple name and no override → startup failure. Unknown name at runtime → exception → normal NServiceBus recoverability (retries, then error queue).
-- Targets NServiceBus 10 / .NET 10; lives in `dotnet/` in this repo.
+- Type resolution: overrides (`EnableZusammen().MapMessageType<T>("Name")`) first, then the endpoint's message types by FullName, then by simple `Type.Name`. Message types sharing a simple name without an override → startup failure. Unknown name at runtime → exception → normal NServiceBus recoverability.
 
-**Verification task (phase 8)**: confirm against the NServiceBus.RabbitMQ source the exact conventional exchange naming for nested/generic types, direct-topology routing key format, the AMQP properties the .NET transport sets/reads (`type`, `correlation_id`, `reply_to`, `expiration`), and `TimeSent` parsing tolerance.
+### Compatibility tests
+
+`dotnet/compat/Zusammen.Compat.Endpoint` is a real NServiceBus 10.2 endpoint (RabbitMQ transport 11.2, MongoDB persistence) started by the Node.js integration tests, reporting handled and failed messages on stdout. Covered for both topologies: mapped commands (properties bound, headers), mapped events delivered to subscribers, unmapped messages resolved by `Zusammen.NServiceBus`, unmapped messages failing on endpoints without it; plus the NServiceBus outbox deduplicating a re-dispatched message. CI installs .NET and sets `ZUSAMMEN_REQUIRE_DOTNET=true` so these tests can't be skipped silently.
 
 ## Integrations
 
@@ -319,7 +324,7 @@ GitHub: [mauroservienti/Zusammen](https://github.com/mauroservienti/Zusammen) (p
 5. **RabbitMQ provider** — `RabbitMQTransport` with amqplib 2 recovery, `RoutingTopology` contract + Zusammen topology, confirm channels, control/retry/error queues, `mandatory` + returns handling for sends, consumer with prefetch, `ControlResult` → ack/delay/dead-letter mapping.
 6. **Integration tests (Testcontainers)** — private `@zusammen/integration-tests` package running the scenarios below on MongoDB 8 + RabbitMQ 4 with fault injection around the real providers (failed dispatches, crashes before commit, slow outbox writes and commits, a dying instance), plus concurrent sessions on competing instances, using the default wire format. Note for users: collections written inside sessions should exist beforehand, MongoDB can't implicitly create the same collection from concurrent transactions.
 7. **Framework integrations** — core `withSession`, `getSession`/`tryGetSession` (`AsyncLocalStorage`), `settleSession` and `TransactionalSession.status`; Express 5 middleware (holds the first response write until the session is settled, replays it afterwards; on commit failure clears the handler's headers and responds 500 or via `onCommitError`), Fastify 5 plugin (`onRequest`/`onSend`, per-route opt-in or `global`), NestJS 12 module (global interceptor, `@Transactional()`, `@CurrentSession()`, `SessionAccessor`, factory lifecycle; handlers using `@Res()` are not supported), Hono 4 middleware. Tests per adapter: commit on success before the response, rollback on error, commit failure mapped to an error response, session reachable via `getSession()` and the request object.
-8. **NServiceBus compatibility (opt-in)** — verify wire details against NServiceBus source; `@zusammen/nservicebus` convention (type registry with `EnclosedMessageTypes` omission when unmapped, header builder, `TimeSent` formatting, PascalCase serializer) with golden-file tests; `@zusammen/rabbitmq/nservicebus` conventional + direct topologies with explicit publish topics and `validateConvention`; `Zusammen.NServiceBus` NuGet package (receiver behavior + type resolution) with unit tests; compat tests against a small .NET 10 NServiceBus endpoint in `compat/` (container or `dotnet` in CI) for both topologies — the endpoint handles Zusammen's commands/events and records what it received for the test to assert on.
+8. **NServiceBus compatibility (opt-in)** — wire details verified against the NServiceBus source (see above); `@zusammen/nservicebus` convention (headers, `TimeSent` wire format, PascalCase JSON, explicit publish topics, `EnclosedMessageTypes` only for mapped types); `@zusammen/rabbitmq/nservicebus` conventional and direct topologies (AMQP properties as NServiceBus sets them, optional event exchanges, `validateConvention`); `Zusammen.NServiceBus` NuGet package with unit tests; compatibility tests against a real NServiceBus endpoint for both topologies, including outbox deduplication.
 9. **Docs & samples** — README per package, delivery-guarantee guidance for receivers, message type mapping guide, a Node → Node sample (default format) and a Node → NServiceBus sample (opt-in, recommending the NServiceBus Outbox on the receiver for deduplication).
 
 ## Verification Scenarios

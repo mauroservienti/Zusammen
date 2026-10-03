@@ -253,6 +253,9 @@ importers:
       '@zusammen/mongodb':
         specifier: workspace:^
         version: link:../mongodb
+      '@zusammen/nservicebus':
+        specifier: workspace:^
+        version: link:../nservicebus
       '@zusammen/rabbitmq':
         specifier: workspace:^
         version: link:../rabbitmq
@@ -319,6 +322,9 @@ importers:
       '@zusammen/core':
         specifier: workspace:^
         version: link:../core
+      '@zusammen/testing':
+        specifier: workspace:^
+        version: link:../testing
 
   packages/rabbitmq:
     devDependencies:
@@ -328,6 +334,9 @@ importers:
       '@zusammen/core':
         specifier: workspace:^
         version: link:../core
+      '@zusammen/nservicebus':
+        specifier: workspace:^
+        version: link:../nservicebus
       '@zusammen/testing':
         specifier: workspace:^
         version: link:../testing

@@ -2,7 +2,7 @@
 
 Transactional sessions for Node.js: commit business data and outgoing messages **together**, or not at all.
 
-> **Status: work in progress.** The core library, MongoDB persistence, RabbitMQ transport and the Express, Fastify, NestJS and Hono adapters are implemented and tested, including crash and race scenarios end to end; NServiceBus compatibility is next. Nothing is published to npm yet. See the [implementation plan](docs/node-js-transactional-session-implementation.md).
+> **Status: work in progress.** The core library, MongoDB persistence, RabbitMQ transport, Express/Fastify/NestJS/Hono adapters and opt-in NServiceBus compatibility are implemented and tested, including crash and race scenarios end to end and compatibility tests against real NServiceBus endpoints. Nothing is published to npm or NuGet yet. See the [implementation plan](docs/node-js-transactional-session-implementation.md).
 
 ## The problem
 
@@ -76,17 +76,35 @@ Zusammen does not provide exactly-once delivery; receivers must be idempotent.
 | `@zusammen/core`                                 | Sessions, control message handling, contracts, default wire format  | Implemented |
 | `@zusammen/mongodb`                              | MongoDB persistence                                                 | Implemented |
 | `@zusammen/rabbitmq`                             | RabbitMQ transport                                                  | Implemented |
-| `@zusammen/rabbitmq/nservicebus`                 | NServiceBus routing topologies for RabbitMQ (opt-in)                | Planned     |
-| `@zusammen/nservicebus`                          | NServiceBus wire format, so .NET endpoints can consume the messages | Planned     |
+| `@zusammen/rabbitmq/nservicebus`                 | NServiceBus routing topologies for RabbitMQ (opt-in)                | Implemented |
+| `@zusammen/nservicebus`                          | NServiceBus wire format, so .NET endpoints can consume the messages | Implemented |
 | `@zusammen/express`, `fastify`, `nestjs`, `hono` | Web framework adapters                                              | Implemented |
 
 ### NServiceBus interoperability
 
-Messages use a minimal, library-agnostic format by default. Opting into the NServiceBus convention and topology makes them consumable by [NServiceBus](https://particular.net/nservicebus) endpoints using the RabbitMQ transport, following the [native integration](https://docs.particular.net/transports/rabbitmq/native-integration) guidance. Behavior is checked against the [NServiceBus TransactionalSession](https://github.com/Particular/NServiceBus.TransactionalSession) acceptance tests via a [conformance matrix](docs/nservicebus-conformance.md).
+Messages use a minimal, library-agnostic format by default. Opting into the NServiceBus convention and a NServiceBus routing topology makes them consumable by [NServiceBus](https://particular.net/nservicebus) endpoints using the RabbitMQ transport, following the [native integration](https://docs.particular.net/transports/rabbitmq/native-integration) guidance:
+
+```typescript
+import { nserviceBusConvention } from '@zusammen/nservicebus';
+import { RabbitMQTransport } from '@zusammen/rabbitmq';
+import { nserviceBusConventionalTopology } from '@zusammen/rabbitmq/nservicebus';
+
+const factory = createSessionFactory({
+  persistence,
+  transport: new RabbitMQTransport({ url, topology: nserviceBusConventionalTopology() }),
+  convention: nserviceBusConvention({
+    endpointName: 'Sales.Api',
+    messageTypes: new Map([[PlaceOrder, 'Sales.Messages.PlaceOrder']]), // .NET FullNames
+    topics: { OrderPlaced: 'Sales.Messages:OrderPlaced' }, // where events are published
+  }),
+});
+```
+
+Messages without a .NET type mapping can be consumed by endpoints that reference the `Zusammen.NServiceBus` NuGet package (in [`dotnet/`](dotnet)) and call `endpointConfiguration.EnableZusammen()`, which matches them to the endpoint's message types by name. Compatibility is tested against real NServiceBus endpoints, and behavior is checked against the [NServiceBus TransactionalSession](https://github.com/Particular/NServiceBus.TransactionalSession) acceptance tests via a [conformance matrix](docs/nservicebus-conformance.md).
 
 ## Development
 
-Requirements: Node.js 22.13+, [pnpm](https://pnpm.io), Docker (for local services and integration tests).
+Requirements: Node.js 22.13+, [pnpm](https://pnpm.io), Docker (for local services and integration tests), .NET 10 SDK (for the NServiceBus package and compatibility tests; the compatibility tests are skipped without it).
 
 ```sh
 pnpm install

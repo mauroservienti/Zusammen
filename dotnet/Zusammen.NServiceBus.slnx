@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/compat/">
+    <Project Path="compat/Zusammen.Compat.Endpoint/Zusammen.Compat.Endpoint.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Zusammen.NServiceBus/Zusammen.NServiceBus.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/Zusammen.NServiceBus.Tests/Zusammen.NServiceBus.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -21,9 +21,26 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
+      # NServiceBus compatibility tests run a .NET endpoint
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm test
+        env:
+          ZUSAMMEN_REQUIRE_DOTNET: 'true'
+
+  dotnet:
+    name: .NET
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build dotnet/Zusammen.NServiceBus.slnx -c Release
+      - run: dotnet test dotnet/Zusammen.NServiceBus.slnx -c Release --no-build

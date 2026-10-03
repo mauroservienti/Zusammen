@@ -9,6 +9,7 @@
     "@testcontainers/rabbitmq": "^12.2.0",
     "@zusammen/core": "workspace:^",
     "@zusammen/mongodb": "workspace:^",
+    "@zusammen/nservicebus": "workspace:^",
     "@zusammen/rabbitmq": "workspace:^",
     "@zusammen/testing": "workspace:^",
     "amqplib": "^2.2.0",

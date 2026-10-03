@@ -9,3 +9,7 @@ bin/
 obj/
 *.user
 TestResults/
+
+# Release artifacts
+npm/
+artifacts/

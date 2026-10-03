@@ -74,13 +74,27 @@ jobs:
       - name: Include the license in every package
         run: for dir in packages/*/; do cp LICENSE "$dir"; done
 
+      # Trusted publishing (OIDC) needs npm 11.5.1+; Node 24 may ship an older one
+      - name: Update npm
+        run: npm install -g npm@^11.5.1
+      - name: Pack npm packages
+        # pnpm turns workspace:^ dependencies into ^<version>; private packages are skipped
+        run: pnpm -r --filter './packages/*' exec sh -c 'if [ "$(node -p "require(\"./package.json\").private === true")" != true ]; then pnpm pack --pack-destination "$GITHUB_WORKSPACE/npm"; fi'
       - name: Publish to npm
-        # Private packages are skipped; workspace dependencies become ^<version>; already published versions are
-        # skipped, so a failed release can be re-run
-        run: pnpm publish -r --access public --no-git-checks --tag "$NPM_DIST_TAG"
+        # Trusted publishing when configured for the packages; otherwise the NPM_TOKEN secret (only needed for the
+        # very first release, before the packages exist). Already published versions are skipped, so a failed release
+        # can be re-run.
+        run: |
+          for tarball in npm/*.tgz; do
+            name="$(tar -xzOf "$tarball" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0)).name')"
+            if npm view "$name@$VERSION" version > /dev/null 2>&1; then
+              echo "$name@$VERSION is already published"
+              continue
+            fi
+            npm publish "$tarball" --access public --provenance --tag "$NPM_DIST_TAG"
+          done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: 'true'
 
       - name: Pack Zusammen.NServiceBus
         run: dotnet pack dotnet/src/Zusammen.NServiceBus -c Release -p:Version="$VERSION" -o artifacts

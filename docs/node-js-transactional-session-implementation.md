@@ -75,95 +75,49 @@ Two independent seams decide what goes on the wire:
 
 Because operations are stored in the outbox **after** the convention has run, re-dispatch by the control message produces byte-identical messages, and changing convention config never affects already-committed messages.
 
-## Core Interfaces (sketch)
+## Core Interfaces
 
-```typescript
-interface OutboxRecord {
-  id: string; // sessionId
-  dispatched: boolean;
-  dispatchedAt?: Date;
-  transportOperations: TransportOperation[];
-}
+The contracts live in `packages/core/src` and are the source of truth; this is a summary.
 
-interface TransportOperation {
-  messageId: string;
-  intent: 'send' | 'publish';
-  destination?: string; // logical destination for send; absent for publish
-  topic?: string; // publish only: where to publish, interpreted by the routing topology; absent for send
-  messageType: string; // as resolved by the convention
-  headers: Record<string, string>; // as built by the convention
-  body: Uint8Array;
-  properties: { contentType: string; correlationId?: string; replyTo?: string }; // mapped to native transport properties
-}
+| File             | Contents                                                                                                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `outbox.ts`      | `OutboxRecord` (one per session, `id` = session ID), `TransportOperation` (prepared message: ID, intent, destination/topic, type, headers, binary body, native properties) |
+| `control.ts`     | `ControlMessage` (session ID, remaining commit duration, delay increment, attempt), `ControlResult` (`ack` / `retry` with next message / `error`), `ControlMessageHandler` |
+| `convention.ts`  | `MessageConvention` (`name`, `toOperation`), `OutgoingMessage`, `ConventionContext` (session ID, injectable clock and ID generator), `SendOptions`, `PublishOptions`       |
+| `persistence.ts` | `PersistenceProvider<TContext>`: connect/disconnect, begin/storeOutbox/commit/rollback, get/markDispatched/storeTombstone                                                  |
+| `transport.ts`   | `TransportProvider`: connect/disconnect, dispatch, sendControl, consumeControl (returns a stop function), optional validateConvention                                      |
+| `session.ts`     | `TransactionalSession<TContext>`, `SessionFactory<TContext>`, `SessionFactoryOptions`, `OpenSessionOptions`, `DEFAULT_MAX_COMMIT_DURATION_MS`                              |
+| `errors.ts`      | `ZusammenError` and subclasses (below)                                                                                                                                     |
+| `logger.ts`      | `Logger` (debug/info/warn/error with structured context), `silentLogger` default                                                                                           |
 
-interface MessageConvention {
-  readonly name: string; // e.g. 'zusammen', 'nservicebus'
-  toOperation(input: OutgoingMessage, ctx: ConventionContext): TransportOperation; // throws on unresolvable type
-}
+Errors: `SessionCommitConflictError` (outbox record already exists, typically a tombstone after the commit window expired), `SessionClosedError`, `FactoryNotStartedError`, `UnknownMessageTypeError`, `UnknownPublishTopicError`, `UnroutableMessageError` (unroutable send), `IncompatibleConventionError` (topology rejects the convention).
 
-interface ControlMessage {
-  sessionId: string;
-  remainingCommitDurationMs: number;
-  commitDelayIncrementMs: number;
-  attempt: number;
-}
+Notes:
 
-interface PersistenceProvider<TCtx> {
-  begin(): Promise<TCtx>;
-  storeOutbox(record: OutboxRecord, ctx: TCtx): Promise<void>; // insert; duplicate key → SessionCommitConflictError
-  commit(ctx: TCtx): Promise<void>;
-  rollback(ctx: TCtx): Promise<void>;
-  get(sessionId: string): Promise<OutboxRecord | null>;
-  markDispatched(sessionId: string): Promise<void>;
-  storeTombstone(sessionId: string): Promise<'stored' | 'exists'>;
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-}
-
-type ControlResult =
-  { kind: 'ack' } | { kind: 'retry'; delayMs: number; next: ControlMessage } | { kind: 'error'; error: Error };
-
-interface TransportProvider {
-  dispatch(operations: TransportOperation[]): Promise<void>; // with publisher confirms
-  sendControl(message: ControlMessage): Promise<void>; // with publisher confirms
-  consumeControl(handler: (message: ControlMessage) => Promise<ControlResult>): Promise<() => Promise<void>>; // returns stop
-  validateConvention?(convention: MessageConvention): void; // lets a topology reject an incompatible convention at startup
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-}
-```
-
-The transport maps `ControlResult` to AMQP actions; no delivery tags leak into core.
+- `ControlMessage.remainingCommitDurationMs` is decremented by each retry delay rather than compared against a timestamp, so processing never depends on clocks agreeing across machines.
+- Message type and topic registries are options of the convention (e.g. `zusammenConvention({ messageTypes, topics })`), not of the factory.
+- The transport maps `ControlResult` to native actions; no delivery tags leak into core.
 
 ### User-facing API
 
 ```typescript
-interface TransactionalSession<TCtx> {
+interface TransactionalSession<TContext> extends AsyncDisposable {
   readonly sessionId: string;
-  readonly transactionContext: TCtx; // e.g., MongoDB ClientSession to pass to user operations
-  send<T>(destination: string, message: T, options?: SendOptions): Promise<void>; // convention runs now, operation buffered in memory
-  publish<T>(message: T, options?: PublishOptions): Promise<void>; // convention runs now, operation buffered in memory
-}
-
-interface SendOptions {
-  messageType?: string;
-  messageId?: string;
-  headers?: Record<string, string>;
-}
-
-interface PublishOptions {
-  messageType?: string;
-  topic?: string; // native publish target, see the routing topology; required by the NServiceBus topologies unless registered
-  messageId?: string;
-  headers?: Record<string, string>;
+  readonly transactionContext: TContext; // e.g., MongoDB ClientSession to pass to user operations
+  send(destination: string, message: unknown, options?: SendOptions): Promise<void>; // convention runs now, operation buffered in memory
+  publish(message: unknown, options?: PublishOptions): Promise<void>; // convention runs now, operation buffered in memory
   commit(): Promise<void>;
   rollback(): Promise<void>;
+  [Symbol.asyncDispose](): Promise<void>; // rolls back if neither committed nor rolled back
 }
 
 // Default: Zusammen convention + Zusammen topology
 const factory = createSessionFactory({ persistence, transport, maxCommitDurationMs: 15_000 });
-await factory.start(); // connects providers and starts consuming the control queue
-const session = await factory.open({ maxCommitDurationMs?: number }); // throws if the factory is not started
+await factory.start(); // connects providers and starts control message processing
+await using session = await factory.open({ maxCommitDurationMs: 5_000 }); // throws if the factory is not started
+await orders.insertOne(order, { session: session.transactionContext });
+await session.publish(new OrderPlaced(order.id));
+await session.commit();
 ```
 
 Opting into NServiceBus compatibility:
@@ -215,13 +169,13 @@ Deliberately minimal, so any consumer (Node, .NET, Python, …) can read it with
   - `zusammen.time-sent` — ISO 8601 UTC
   - `zusammen.session-id` — originating transactional session
   - user-supplied headers merged last; cannot override `zusammen.*`
-- Message type resolution: `options.messageType` → factory registry → class name (`message.constructor.name`, unless it is `Object`) → `UnknownMessageTypeError` at `send`/`publish` time.
+- Message type resolution: `options.messageType` → the convention's `messageTypes` registry → class name (`message.constructor.name`, unless it is `Object`) → `UnknownMessageTypeError` at `send`/`publish` time.
 - Body: UTF-8 JSON, property names preserved as-is, `content_type: application/json`. Pluggable serializer.
 
 ### RabbitMQ topology
 
 - Send: default exchange, routing key = destination queue name, `mandatory: true`.
-- Publish: durable topic exchange `zusammen.events` (declared on connect), routing key = `topic` if supplied (option or factory `topics` registry), otherwise the message type. Subscribers bind their own queues.
+- Publish: durable topic exchange `zusammen.events` (declared on connect), routing key = `topic` if supplied (option or the convention's `topics` registry), otherwise the message type. Subscribers bind their own queues.
 - AMQP properties: `message_id`, `content_type`, `type` = message type, `delivery_mode: 2`, `correlation_id`/`reply_to` when set by the convention.
 
 ## NServiceBus Compatibility (opt-in)
@@ -285,7 +239,7 @@ Routing:
 | Conventional | publish to the fanout exchange named after the destination endpoint | the name of the fanout exchange to publish to, e.g. `Sales.Messages:OrderPlaced` |
 | Direct       | default exchange, routing key = destination endpoint                | the routing key on `amq.topic`, e.g. `Sales.Messages.OrderPlaced`                |
 
-- **Publish target is explicit, never derived from the message type.** The user supplies `topic` per call or via the factory `topics` registry (`topics: { OrderPlaced: 'Sales.Messages:OrderPlaced' }`); otherwise `publish` throws `UnknownPublishTopicError` before commit. The value is native to the topology and passed through as-is, so switching between conventional and direct topologies means changing the topic values. Users must know the subscriber-side naming (`Namespace:TypeName` exchange for conventional, `Namespace.TypeName` routing key for direct).
+- **Publish target is explicit, never derived from the message type.** The user supplies `topic` per call or via the NServiceBus convention's `topics` registry (`topics: { OrderPlaced: 'Sales.Messages:OrderPlaced' }`); otherwise the convention throws `UnknownPublishTopicError` at `publish` time, before commit (topologies only run at dispatch, too late to fail fast). The value is native to the topology and passed through as-is, so switching between conventional and direct topologies means changing the topic values. Users must know the subscriber-side naming (`Namespace:TypeName` exchange for conventional, `Namespace.TypeName` routing key for direct).
 - A mistyped topic is **not** detected: publishes are not `mandatory`, so the event is dropped silently, same as publishing with no subscribers. Called out in the docs.
 - Conventional publish: declare the topic exchange (fanout, durable) before publishing, as subscribers bind their endpoint exchange to it; publishing to an undeclared exchange closes the AMQP channel.
 - Conventional send: the destination exchange is created by the receiving endpoint; if missing, dispatch fails and the control message retries (no auto-declare, to avoid creating unbound exchanges that silently drop messages).
@@ -348,7 +302,7 @@ The [NServiceBus TransactionalSession acceptance tests](https://github.com/Parti
 ## Implementation Phases
 
 1. **Scaffold** — pnpm workspace, TypeScript project references, Vitest, ESLint/Prettier, `docker-compose.yml` (MongoDB replica set + RabbitMQ) for local dev, CI workflow, scheduled NServiceBus conformance drift check (see below).
-2. **Core contracts** — types, interfaces (`PersistenceProvider`, `TransportProvider`, `MessageConvention`), error classes (`SessionCommitConflictError`, `SessionClosedError`, `UnknownMessageTypeError`, …).
+2. **Core contracts** — types, interfaces (`PersistenceProvider`, `TransportProvider`, `MessageConvention`, `TransactionalSession`, `SessionFactory`), error classes, logger. Type-level tests (`expectTypeOf`) for the contracts.
 3. **Core logic + default convention** — `TransactionalSession`, session factory, `ControlMessageHandler` (window/backoff/tombstone), Zusammen convention. Unit tests with in-memory fake providers covering every row of the decision table and every failure scenario.
 4. **MongoDB provider** — `ClientSession` transactions, primary/`majority` read and write concerns on the control path, outbox collection, indexes (TTL), tombstone via duplicate key detection, mapping duplicate key on commit to `SessionCommitConflictError`.
 5. **RabbitMQ provider** — `RoutingTopology` contract + Zusammen topology, confirm channels, control/retry/error queues, `mandatory` + returns handling for sends, consumer with prefetch, `ControlResult` → ack/delay/dead-letter mapping.

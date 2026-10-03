@@ -13,7 +13,7 @@ Transactional sessions for Node.js: commit business data and outgoing messages *
 
 A web request stores an order and publishes `OrderPlaced`. Writing to the database and sending to the broker are two separate operations: if the process crashes, or the broker is unavailable, between the two, the order exists but nobody hears about it — or, the other way around, everybody hears about an order that was never stored.
 
-Zusammen ("together" in German) applies the **outbox pattern**: outgoing messages are stored in the same database transaction as the business data, and dispatched after the commit.
+Zusammen ("together" in German) applies the **outbox pattern**: outgoing messages are stored in the same database transaction as the business data, and dispatched after the commit. [What's an Outbox and why do we need it?](https://milestone.topics.it/2023/02/07/outbox-what-and-why.html) explains the pattern in depth, and [Transactions: none for me, thanks](https://milestone.topics.it/2021/01/30/transactions-none-for-me-thanks.html) why distributed transactions aren't the answer.
 
 ```typescript
 await using session = await factory.open();
@@ -47,7 +47,7 @@ Instead of a background poller scanning the outbox, Zusammen uses a **control me
 3. The control message is the safety net: whichever instance receives it checks the outbox and dispatches anything that is still pending — even if the process that committed has died in the meantime.
 4. If the transaction never commits, the control message waits for a bounded commit window, then stores a _tombstone_ so a late commit fails instead of leaving messages behind without a safety net.
 
-No polling, no extra infrastructure: the broker delivers the guarantee.
+No polling, no extra infrastructure: the broker delivers the guarantee. It's the approach of the [NServiceBus transactional session](https://docs.particular.net/nservicebus/transactional-session/), brought to Node.js.
 
 ## Infrastructure
 
@@ -130,6 +130,12 @@ Messages without a .NET type mapping can be consumed by endpoints that reference
 - Package READMEs: [core](packages/core), [mongodb](packages/mongodb), [rabbitmq](packages/rabbitmq), [nservicebus](packages/nservicebus), [express](packages/express), [fastify](packages/fastify), [nestjs](packages/nestjs), [hono](packages/hono), [Zusammen.NServiceBus](dotnet).
 - Samples: [Node.js → Node.js](samples/node-to-node) (Express API and an idempotent worker), [Node.js → NServiceBus](samples/node-to-nservicebus) (Express API and a .NET NServiceBus endpoint).
 - Design: [implementation plan](docs/node-js-transactional-session-implementation.md), [NServiceBus conformance matrix](docs/nservicebus-conformance.md).
+
+### Further reading
+
+- [What's an Outbox and why do we need it?](https://milestone.topics.it/2023/02/07/outbox-what-and-why.html): the problem, the pattern, and the HTTP-request case Zusammen implements.
+- [Transactions: none for me, thanks](https://milestone.topics.it/2021/01/30/transactions-none-for-me-thanks.html): why not distributed transactions.
+- NServiceBus: [outbox](https://docs.particular.net/nservicebus/outbox/) (deduplication on the receiving side), [transactional session](https://docs.particular.net/nservicebus/transactional-session/) (the design Zusammen follows), [RabbitMQ native integration](https://docs.particular.net/transports/rabbitmq/native-integration) and [routing topologies](https://docs.particular.net/transports/rabbitmq/routing-topology), [message headers](https://docs.particular.net/nservicebus/messaging/headers), [message type detection](https://docs.particular.net/nservicebus/messaging/message-type-detection), [System.Text.Json serializer](https://docs.particular.net/nservicebus/serialization/system-json), [recoverability](https://docs.particular.net/nservicebus/recoverability/).
 
 ## Development
 

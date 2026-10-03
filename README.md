@@ -2,7 +2,7 @@
 
 Transactional sessions for Node.js: commit business data and outgoing messages **together**, or not at all.
 
-> **Status: work in progress.** The core library and the MongoDB provider are implemented and tested; the RabbitMQ transport is next. Nothing is published to npm yet. See the [implementation plan](docs/node-js-transactional-session-implementation.md).
+> **Status: work in progress.** The core library, the MongoDB persistence and the RabbitMQ transport are implemented and tested; end-to-end tests, framework adapters and NServiceBus compatibility are next. Nothing is published to npm yet. See the [implementation plan](docs/node-js-transactional-session-implementation.md).
 
 ## The problem
 
@@ -44,7 +44,7 @@ Zusammen does not provide exactly-once delivery; receivers must be idempotent.
 | ------------------------------------------------ | ------------------------------------------------------------------- | ----------- |
 | `@zusammen/core`                                 | Sessions, control message handling, contracts, default wire format  | Implemented |
 | `@zusammen/mongodb`                              | MongoDB persistence                                                 | Implemented |
-| `@zusammen/rabbitmq`                             | RabbitMQ transport                                                  | Planned     |
+| `@zusammen/rabbitmq`                             | RabbitMQ transport                                                  | Implemented |
 | `@zusammen/rabbitmq/nservicebus`                 | NServiceBus routing topologies for RabbitMQ (opt-in)                | Planned     |
 | `@zusammen/nservicebus`                          | NServiceBus wire format, so .NET endpoints can consume the messages | Planned     |
 | `@zusammen/express`, `fastify`, `nestjs`, `hono` | Web framework adapters                                              | Planned     |

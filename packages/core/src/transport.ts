@@ -11,8 +11,11 @@ export interface TransportProvider {
 
   /** Resolves only once the broker has accepted every operation. Unroutable sends reject with {@link UnroutableMessageError}. */
   dispatch(operations: readonly TransportOperation[]): Promise<void>;
-  /** Resolves only once the broker has accepted the control message. */
-  sendControl(message: ControlMessage): Promise<void>;
+  /**
+   * Resolves only once the broker has accepted the control message. It must not be delivered before `delayMs` has
+   * passed (later is fine), so that it normally arrives after the immediate dispatch instead of racing it.
+   */
+  sendControl(message: ControlMessage, delayMs: number): Promise<void>;
   /** Starts delivering control messages to the handler and applies each {@link ControlResult} natively. */
   consumeControl(handler: ControlMessageHandler): Promise<StopControlProcessing>;
 

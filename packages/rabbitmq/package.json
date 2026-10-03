@@ -27,7 +27,10 @@
     "amqplib": "^2.0.0"
   },
   "devDependencies": {
+    "@testcontainers/rabbitmq": "^12.2.0",
     "@zusammen/core": "workspace:^",
-    "amqplib": "^2.2.0"
+    "@zusammen/testing": "workspace:^",
+    "amqplib": "^2.2.0",
+    "testcontainers": "^12.2.0"
   }
 }

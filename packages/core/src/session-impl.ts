@@ -78,8 +78,9 @@ export class Session<TContext> implements TransactionalSession<TContext> {
     };
 
     await this.#finish(async () => {
-      // Control message first: once the transaction commits, dispatch is guaranteed even if this process dies
-      await transport.sendControl(control);
+      // Control message first: once the transaction commits, dispatch is guaranteed even if this process dies.
+      // Delayed, so that it normally finds the immediate dispatch done; the delay doesn't count against the window.
+      await transport.sendControl(control, this.#settings.initialCommitDelayIncrementMs);
       await persistence.storeOutbox(
         { id: this.sessionId, dispatched: false, transportOperations: this.#operations },
         this.transactionContext,

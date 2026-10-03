@@ -222,12 +222,21 @@ importers:
 
   packages/rabbitmq:
     devDependencies:
+      '@testcontainers/rabbitmq':
+        specifier: ^12.2.0
+        version: 12.2.0
       '@zusammen/core':
         specifier: workspace:^
         version: link:../core
+      '@zusammen/testing':
+        specifier: workspace:^
+        version: link:../testing
       amqplib:
         specifier: ^2.2.0
         version: 2.2.0
+      testcontainers:
+        specifier: ^12.2.0
+        version: 12.2.0
 
   packages/testing:
     dependencies:
@@ -490,6 +499,9 @@ packages:
 
   '@testcontainers/mongodb@12.2.0':
     resolution: {integrity: sha512-ET7C32t7IIOM93NCAgjBhLcp7RC0gbtiBvnK/A+cmE5ezbIGF36UvjNhSFK2ns+7OosCgwv4lRf3H/3sYzIpoQ==}
+
+  '@testcontainers/rabbitmq@12.2.0':
+    resolution: {integrity: sha512-JCN+FERjafts0etPq+q6WAfOJYjwU9c7fnX3xU+10YYdXLRmX+tgo+CgStJ29fyrcL1bklUB3WAeyX1M4AKgPg==}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -1836,6 +1848,15 @@ snapshots:
   '@testcontainers/mongodb@12.2.0':
     dependencies:
       compare-versions: 6.1.1
+      testcontainers: 12.2.0
+    transitivePeerDependencies:
+      - bare-abort-controller
+      - bare-buffer
+      - react-native-b4a
+      - supports-color
+
+  '@testcontainers/rabbitmq@12.2.0':
+    dependencies:
       testcontainers: 12.2.0
     transitivePeerDependencies:
       - bare-abort-controller

@@ -48,6 +48,17 @@ describe('transactional session', () => {
     expect(transport.processed.map((p) => p.result.kind)).toEqual(['ack']);
   });
 
+  test('the control message is delayed so it normally finds the immediate dispatch done', async () => {
+    const { transport, factory } = await setup({ controlTiming: { initialCommitDelayIncrementMs: 750 } });
+
+    const session = await factory.open({ maxCommitDurationMs: 5_000 });
+    await session.publish(new OrderPlaced('order-1'));
+    await session.commit();
+
+    expect(transport.controlDelays).toEqual([750]);
+    expect(transport.controlQueue[0]?.remainingCommitDurationMs).toBe(5_000);
+  });
+
   test('rollback: nothing persisted, nothing dispatched, no control message', async () => {
     const { persistence, transport, factory } = await setup();
 

@@ -103,6 +103,7 @@ export interface ProcessedControlMessage {
 export class InMemoryTransport implements TransportProvider {
   readonly dispatched: TransportOperation[] = [];
   readonly controlQueue: ControlMessage[] = [];
+  readonly controlDelays: number[] = [];
   readonly processed: ProcessedControlMessage[] = [];
   readonly deadLettered: ControlMessage[] = [];
   /** Number of upcoming `dispatch` calls that fail. */
@@ -131,11 +132,12 @@ export class InMemoryTransport implements TransportProvider {
     return Promise.resolve();
   }
 
-  sendControl(message: ControlMessage): Promise<void> {
+  sendControl(message: ControlMessage, delayMs: number): Promise<void> {
     if (this.failSendControl) {
       return Promise.reject(new Error('broker unavailable'));
     }
     this.controlQueue.push(message);
+    this.controlDelays.push(delayMs);
     return Promise.resolve();
   }
 

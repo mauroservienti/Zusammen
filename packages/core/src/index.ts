@@ -26,6 +26,7 @@ export {
   type OpenSessionOptions,
   type SessionFactory,
   type SessionFactoryOptions,
+  type SessionStatus,
   type TransactionalSession,
 } from './session.js';
 export type { StopControlProcessing, TransportProvider } from './transport.js';
@@ -48,3 +49,11 @@ export {
   type Serializer,
   type ZusammenConventionOptions,
 } from './zusammen-convention.js';
+export {
+  getSession,
+  NoActiveSessionError,
+  runWithSession,
+  settleSession,
+  tryGetSession,
+  withSession,
+} from './context.js';

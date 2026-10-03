@@ -10,10 +10,8 @@ import { SessionClosedError } from './errors.js';
 import type { Logger } from './logger.js';
 import type { TransportOperation } from './outbox.js';
 import type { PersistenceProvider } from './persistence.js';
-import type { TransactionalSession } from './session.js';
+import type { SessionStatus, TransactionalSession } from './session.js';
 import type { TransportProvider } from './transport.js';
-
-type SessionState = 'open' | 'committing' | 'committed' | 'rolledBack';
 
 export interface SessionDependencies<TContext> {
   persistence: PersistenceProvider<TContext>;
@@ -35,7 +33,7 @@ export class Session<TContext> implements TransactionalSession<TContext> {
   readonly #settings: SessionSettings;
   readonly #operations: TransportOperation[] = [];
   readonly #conventionContext: ConventionContext;
-  #state: SessionState = 'open';
+  #state: SessionStatus = 'open';
 
   constructor(
     deps: SessionDependencies<TContext>,
@@ -49,6 +47,10 @@ export class Session<TContext> implements TransactionalSession<TContext> {
 
   get sessionId(): string {
     return this.#settings.sessionId;
+  }
+
+  get status(): SessionStatus {
+    return this.#state;
   }
 
   send(destination: string, message: unknown, options: SendOptions = {}): Promise<void> {

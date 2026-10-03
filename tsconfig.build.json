@@ -1,9 +1,29 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/core/tsconfig.build.json" },
-    { "path": "packages/mongodb/tsconfig.build.json" },
-    { "path": "packages/rabbitmq/tsconfig.build.json" },
-    { "path": "packages/nservicebus/tsconfig.build.json" }
+    {
+      "path": "packages/core/tsconfig.build.json"
+    },
+    {
+      "path": "packages/mongodb/tsconfig.build.json"
+    },
+    {
+      "path": "packages/rabbitmq/tsconfig.build.json"
+    },
+    {
+      "path": "packages/nservicebus/tsconfig.build.json"
+    },
+    {
+      "path": "packages/express/tsconfig.build.json"
+    },
+    {
+      "path": "packages/fastify/tsconfig.build.json"
+    },
+    {
+      "path": "packages/hono/tsconfig.build.json"
+    },
+    {
+      "path": "packages/nestjs/tsconfig.build.json"
+    }
   ]
 }

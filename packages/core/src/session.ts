@@ -5,8 +5,11 @@ import type { TransportProvider } from './transport.js';
 
 export const DEFAULT_MAX_COMMIT_DURATION_MS = 15_000;
 
+export type SessionStatus = 'open' | 'committing' | 'committed' | 'rolledBack';
+
 export interface TransactionalSession<TContext> extends AsyncDisposable {
   readonly sessionId: string;
+  readonly status: SessionStatus;
   /** Pass to your own data operations so they join the session's transaction (e.g. a MongoDB `ClientSession`). */
   readonly transactionContext: TContext;
 

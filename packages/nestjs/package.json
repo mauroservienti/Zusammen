@@ -1,0 +1,36 @@
+{
+  "name": "@zusammen/nestjs",
+  "version": "0.0.0",
+  "description": "NestJS integration for Zusammen transactional sessions",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "@zusammen/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {},
+  "peerDependencies": {
+    "@nestjs/common": "^12.0.0",
+    "@nestjs/core": "^12.0.0",
+    "@zusammen/core": "workspace:^",
+    "rxjs": "^7.1.0"
+  },
+  "devDependencies": {
+    "@nestjs/common": "^12.1.2",
+    "@nestjs/core": "^12.1.2",
+    "@nestjs/platform-express": "^12.1.2",
+    "@nestjs/testing": "^12.1.2",
+    "@zusammen/core": "workspace:^",
+    "@zusammen/testing": "workspace:^",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  }
+}

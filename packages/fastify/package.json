@@ -1,0 +1,31 @@
+{
+  "name": "@zusammen/fastify",
+  "version": "0.0.0",
+  "description": "Fastify integration for Zusammen transactional sessions",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "@zusammen/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "fastify-plugin": "^6.0.0"
+  },
+  "peerDependencies": {
+    "@zusammen/core": "workspace:^",
+    "fastify": "^5.0.0"
+  },
+  "devDependencies": {
+    "@zusammen/core": "workspace:^",
+    "@zusammen/testing": "workspace:^",
+    "fastify": "^5.12.5"
+  }
+}

@@ -2,7 +2,7 @@
 
 Transactional sessions for Node.js: commit business data and outgoing messages **together**, or not at all.
 
-> **Status: work in progress.** The core library, the MongoDB persistence and the RabbitMQ transport are implemented and tested end to end, including crash and race scenarios; framework adapters and NServiceBus compatibility are next. Nothing is published to npm yet. See the [implementation plan](docs/node-js-transactional-session-implementation.md).
+> **Status: work in progress.** The core library, MongoDB persistence, RabbitMQ transport and the Express, Fastify, NestJS and Hono adapters are implemented and tested, including crash and race scenarios end to end; NServiceBus compatibility is next. Nothing is published to npm yet. See the [implementation plan](docs/node-js-transactional-session-implementation.md).
 
 ## The problem
 
@@ -38,6 +38,29 @@ Zusammen doesn't create collections, indexes, queues or exchanges unless you ask
 const factory = createSessionFactory({ persistence, transport, createResources: true });
 ```
 
+## Web frameworks
+
+Adapters open a session per request, make it available to your code (as a request property and through `getSession()` anywhere in the call stack), and commit **before the response is sent**, so a client never sees success for a commit that failed. Success responses (below 400) commit; errors and thrown exceptions roll back.
+
+```typescript
+import { getSession } from '@zusammen/core';
+import { transactionalSession } from '@zusammen/express';
+
+app.post('/orders', transactionalSession(factory), async (req, res) => {
+  await placeOrder(req.body); // uses getSession() internally
+  res.status(201).json({ ok: true });
+});
+```
+
+| Framework | Package             | Usage                                                                          |
+| --------- | ------------------- | ------------------------------------------------------------------------------ |
+| Express 5 | `@zusammen/express` | `transactionalSession(factory)` middleware                                     |
+| Fastify 5 | `@zusammen/fastify` | `zusammen` plugin; routes opt in with `config: { transactionalSession: true }` |
+| NestJS 12 | `@zusammen/nestjs`  | `ZusammenModule.forRoot({ factory })`, `@Transactional()`, `@CurrentSession()` |
+| Hono 4    | `@zusammen/hono`    | `transactionalSession(factory)` middleware                                     |
+
+Without a framework, `withSession(factory, async (session) => { … })` commits when the function succeeds and rolls back when it throws.
+
 ## Guarantees
 
 - **Atomic state change**: business data and outgoing messages are committed together or not at all.
@@ -55,7 +78,7 @@ Zusammen does not provide exactly-once delivery; receivers must be idempotent.
 | `@zusammen/rabbitmq`                             | RabbitMQ transport                                                  | Implemented |
 | `@zusammen/rabbitmq/nservicebus`                 | NServiceBus routing topologies for RabbitMQ (opt-in)                | Planned     |
 | `@zusammen/nservicebus`                          | NServiceBus wire format, so .NET endpoints can consume the messages | Planned     |
-| `@zusammen/express`, `fastify`, `nestjs`, `hono` | Web framework adapters                                              | Planned     |
+| `@zusammen/express`, `fastify`, `nestjs`, `hono` | Web framework adapters                                              | Implemented |
 
 ### NServiceBus interoperability
 

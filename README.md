@@ -1,8 +1,13 @@
 # Zusammen
 
+[![CI](https://github.com/mauroservienti/Zusammen/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mauroservienti/Zusammen/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@zusammen/core/next?label=npm%20%40zusammen%2Fcore)](https://www.npmjs.com/package/@zusammen/core)
+[![NuGet](https://img.shields.io/nuget/vpre/Zusammen.NServiceBus?label=NuGet%20Zusammen.NServiceBus)](https://www.nuget.org/packages/Zusammen.NServiceBus)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Transactional sessions for Node.js: commit business data and outgoing messages **together**, or not at all.
 
-> **Status: work in progress.** The core library, MongoDB persistence, RabbitMQ transport, Express/Fastify/NestJS/Hono adapters and opt-in NServiceBus compatibility are implemented and tested, including crash and race scenarios end to end and compatibility tests against real NServiceBus endpoints. Nothing is published to npm or NuGet yet. See the [implementation plan](docs/node-js-transactional-session-implementation.md).
+> **Status: alpha.** Everything described here is implemented and tested, including crash and race scenarios end to end and compatibility tests against real NServiceBus endpoints. Prereleases are published to npm (`next` dist-tag) and NuGet; APIs may still change before 1.0. See the [implementation plan](docs/node-js-transactional-session-implementation.md) for the design.
 
 ## The problem
 
@@ -18,6 +23,20 @@ await session.publish(new OrderPlaced(order.id));
 
 await session.commit(); // data and messages, atomically
 ```
+
+## Installation
+
+Pick a persistence, a transport and, optionally, a framework adapter. Libraries the packages integrate with are peer dependencies, installed alongside:
+
+```sh
+npm install @zusammen/core @zusammen/mongodb @zusammen/rabbitmq mongodb amqplib
+npm install @zusammen/express express   # or fastify, nestjs, hono
+npm install @zusammen/nservicebus       # opt-in NServiceBus compatibility
+```
+
+Until 1.0, releases are prereleases on the `next` dist-tag: add `@next` (e.g. `npm install @zusammen/core@next`) to get the latest one. Requires Node.js 22.13+ and MongoDB running as a replica set or sharded cluster (transactions). Tested with MongoDB 8, RabbitMQ 4 and NServiceBus 10.
+
+For NServiceBus endpoints receiving unmapped messages: `dotnet add package Zusammen.NServiceBus --prerelease`.
 
 ## How it works
 
@@ -52,12 +71,12 @@ app.post('/orders', transactionalSession(factory), async (req, res) => {
 });
 ```
 
-| Framework | Package             | Usage                                                                          |
-| --------- | ------------------- | ------------------------------------------------------------------------------ |
-| Express 5 | `@zusammen/express` | `transactionalSession(factory)` middleware                                     |
-| Fastify 5 | `@zusammen/fastify` | `zusammen` plugin; routes opt in with `config: { transactionalSession: true }` |
-| NestJS 12 | `@zusammen/nestjs`  | `ZusammenModule.forRoot({ factory })`, `@Transactional()`, `@CurrentSession()` |
-| Hono 4    | `@zusammen/hono`    | `transactionalSession(factory)` middleware                                     |
+| Framework | Package                                 | Usage                                                                          |
+| --------- | --------------------------------------- | ------------------------------------------------------------------------------ |
+| Express 5 | [`@zusammen/express`](packages/express) | `transactionalSession(factory)` middleware                                     |
+| Fastify 5 | [`@zusammen/fastify`](packages/fastify) | `zusammen` plugin; routes opt in with `config: { transactionalSession: true }` |
+| NestJS 12 | [`@zusammen/nestjs`](packages/nestjs)   | `ZusammenModule.forRoot({ factory })`, `@Transactional()`, `@CurrentSession()` |
+| Hono 4    | [`@zusammen/hono`](packages/hono)       | `transactionalSession(factory)` middleware                                     |
 
 Without a framework, `withSession(factory, async (session) => { … })` commits when the function succeeds and rolls back when it throws.
 
@@ -71,14 +90,17 @@ Zusammen does not provide exactly-once delivery; receivers must be idempotent.
 
 ## Packages
 
-| Package                                          | Description                                                         | Status      |
-| ------------------------------------------------ | ------------------------------------------------------------------- | ----------- |
-| `@zusammen/core`                                 | Sessions, control message handling, contracts, default wire format  | Implemented |
-| `@zusammen/mongodb`                              | MongoDB persistence                                                 | Implemented |
-| `@zusammen/rabbitmq`                             | RabbitMQ transport                                                  | Implemented |
-| `@zusammen/rabbitmq/nservicebus`                 | NServiceBus routing topologies for RabbitMQ (opt-in)                | Implemented |
-| `@zusammen/nservicebus`                          | NServiceBus wire format, so .NET endpoints can consume the messages | Implemented |
-| `@zusammen/express`, `fastify`, `nestjs`, `hono` | Web framework adapters                                              | Implemented |
+| Package                                         | Description                                                                            | Registry                                                     |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [`@zusammen/core`](packages/core)               | Sessions, control message handling, contracts, default wire format                     | [npm](https://www.npmjs.com/package/@zusammen/core)          |
+| [`@zusammen/mongodb`](packages/mongodb)         | MongoDB persistence                                                                    | [npm](https://www.npmjs.com/package/@zusammen/mongodb)       |
+| [`@zusammen/rabbitmq`](packages/rabbitmq)       | RabbitMQ transport; NServiceBus routing topologies in `@zusammen/rabbitmq/nservicebus` | [npm](https://www.npmjs.com/package/@zusammen/rabbitmq)      |
+| [`@zusammen/nservicebus`](packages/nservicebus) | Opt-in NServiceBus wire format, so .NET endpoints can consume the messages             | [npm](https://www.npmjs.com/package/@zusammen/nservicebus)   |
+| [`@zusammen/express`](packages/express)         | Express 5 adapter                                                                      | [npm](https://www.npmjs.com/package/@zusammen/express)       |
+| [`@zusammen/fastify`](packages/fastify)         | Fastify 5 adapter                                                                      | [npm](https://www.npmjs.com/package/@zusammen/fastify)       |
+| [`@zusammen/nestjs`](packages/nestjs)           | NestJS 12 adapter                                                                      | [npm](https://www.npmjs.com/package/@zusammen/nestjs)        |
+| [`@zusammen/hono`](packages/hono)               | Hono 4 adapter                                                                         | [npm](https://www.npmjs.com/package/@zusammen/hono)          |
+| [`Zusammen.NServiceBus`](dotnet)                | For NServiceBus endpoints: resolves messages sent without a .NET type mapping          | [NuGet](https://www.nuget.org/packages/Zusammen.NServiceBus) |
 
 ### NServiceBus interoperability
 
@@ -104,7 +126,7 @@ Messages without a .NET type mapping can be consumed by endpoints that reference
 
 ## Documentation
 
-- Guides: [delivery guarantees](docs/guides/delivery-guarantees.md) (what receivers need to do), [message types](docs/guides/message-types.md) (naming, bundlers, NServiceBus mapping and topics), [operations](docs/guides/operations.md) (resources, control queues, timing, logging).
+- Guides: [delivery guarantees](docs/guides/delivery-guarantees.md) (what receivers need to do), [message types](docs/guides/message-types.md) (naming, bundlers, NServiceBus mapping and topics), [operations](docs/guides/operations.md) (resources, control queues, timing, logging), [releasing](docs/guides/releasing.md) (for maintainers).
 - Package READMEs: [core](packages/core), [mongodb](packages/mongodb), [rabbitmq](packages/rabbitmq), [nservicebus](packages/nservicebus), [express](packages/express), [fastify](packages/fastify), [nestjs](packages/nestjs), [hono](packages/hono), [Zusammen.NServiceBus](dotnet).
 - Samples: [Node.js → Node.js](samples/node-to-node) (Express API and an idempotent worker), [Node.js → NServiceBus](samples/node-to-nservicebus) (Express API and a .NET NServiceBus endpoint).
 - Design: [implementation plan](docs/node-js-transactional-session-implementation.md), [NServiceBus conformance matrix](docs/nservicebus-conformance.md).
@@ -127,7 +149,7 @@ docker compose up -d   # MongoDB (single-node replica set) and RabbitMQ for loca
 
 `pnpm conformance:check` verifies the NServiceBus conformance matrix against the upstream acceptance tests.
 
-Releases are published by pushing a SemVer tag (e.g. `0.1.0-alpha.1`) on `main`: see [repository setup](docs/node-js-transactional-session-implementation.md#repository-setup).
+Releases are published by pushing a SemVer tag on `main`: see [releasing](docs/guides/releasing.md).
 
 ## License
 

@@ -53,7 +53,8 @@ jobs:
       id-token: write # npm provenance
     env:
       VERSION: ${{ needs.validate.outputs.version }}
-      # Prereleases never become what `npm install` picks by default
+      # Prereleases go to `next`, stable versions to `latest` (npm also sets `latest` for a package's very first
+      # version, whatever the tag)
       NPM_DIST_TAG: ${{ needs.validate.outputs.prerelease == 'true' && 'next' || 'latest' }}
     steps:
       - uses: actions/checkout@v7

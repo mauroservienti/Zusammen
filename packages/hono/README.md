@@ -2,6 +2,14 @@
 
 Hono 4 integration for [Zusammen](https://github.com/mauroservienti/Zusammen) transactional sessions, for long-running Node.js, Bun or Deno servers (Zusammen needs a process consuming the control queue).
 
+## Install
+
+```sh
+npm install @zusammen/core @zusammen/hono hono
+```
+
+Until 1.0, releases are prereleases on the `next` dist-tag: append `@next` to the `@zusammen/*` packages to get the latest one.
+
 ```typescript
 import { sessionOf, transactionalSession, type TransactionalSessionVariables } from '@zusammen/hono';
 

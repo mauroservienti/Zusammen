@@ -71,12 +71,12 @@ app.post('/orders', transactionalSession(factory), async (req, res) => {
 });
 ```
 
-| Framework | Package             | Usage                                                                          |
-| --------- | ------------------- | ------------------------------------------------------------------------------ |
-| Express 5 | `@zusammen/express` | `transactionalSession(factory)` middleware                                     |
-| Fastify 5 | `@zusammen/fastify` | `zusammen` plugin; routes opt in with `config: { transactionalSession: true }` |
-| NestJS 12 | `@zusammen/nestjs`  | `ZusammenModule.forRoot({ factory })`, `@Transactional()`, `@CurrentSession()` |
-| Hono 4    | `@zusammen/hono`    | `transactionalSession(factory)` middleware                                     |
+| Framework | Package                                 | Usage                                                                          |
+| --------- | --------------------------------------- | ------------------------------------------------------------------------------ |
+| Express 5 | [`@zusammen/express`](packages/express) | `transactionalSession(factory)` middleware                                     |
+| Fastify 5 | [`@zusammen/fastify`](packages/fastify) | `zusammen` plugin; routes opt in with `config: { transactionalSession: true }` |
+| NestJS 12 | [`@zusammen/nestjs`](packages/nestjs)   | `ZusammenModule.forRoot({ factory })`, `@Transactional()`, `@CurrentSession()` |
+| Hono 4    | [`@zusammen/hono`](packages/hono)       | `transactionalSession(factory)` middleware                                     |
 
 Without a framework, `withSession(factory, async (session) => { … })` commits when the function succeeds and rolls back when it throws.
 
@@ -90,14 +90,17 @@ Zusammen does not provide exactly-once delivery; receivers must be idempotent.
 
 ## Packages
 
-| Package                                          | Description                                                         | Status      |
-| ------------------------------------------------ | ------------------------------------------------------------------- | ----------- |
-| `@zusammen/core`                                 | Sessions, control message handling, contracts, default wire format  | Implemented |
-| `@zusammen/mongodb`                              | MongoDB persistence                                                 | Implemented |
-| `@zusammen/rabbitmq`                             | RabbitMQ transport                                                  | Implemented |
-| `@zusammen/rabbitmq/nservicebus`                 | NServiceBus routing topologies for RabbitMQ (opt-in)                | Implemented |
-| `@zusammen/nservicebus`                          | NServiceBus wire format, so .NET endpoints can consume the messages | Implemented |
-| `@zusammen/express`, `fastify`, `nestjs`, `hono` | Web framework adapters                                              | Implemented |
+| Package                                         | Description                                                                            | Registry                                                     |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [`@zusammen/core`](packages/core)               | Sessions, control message handling, contracts, default wire format                     | [npm](https://www.npmjs.com/package/@zusammen/core)          |
+| [`@zusammen/mongodb`](packages/mongodb)         | MongoDB persistence                                                                    | [npm](https://www.npmjs.com/package/@zusammen/mongodb)       |
+| [`@zusammen/rabbitmq`](packages/rabbitmq)       | RabbitMQ transport; NServiceBus routing topologies in `@zusammen/rabbitmq/nservicebus` | [npm](https://www.npmjs.com/package/@zusammen/rabbitmq)      |
+| [`@zusammen/nservicebus`](packages/nservicebus) | Opt-in NServiceBus wire format, so .NET endpoints can consume the messages             | [npm](https://www.npmjs.com/package/@zusammen/nservicebus)   |
+| [`@zusammen/express`](packages/express)         | Express 5 adapter                                                                      | [npm](https://www.npmjs.com/package/@zusammen/express)       |
+| [`@zusammen/fastify`](packages/fastify)         | Fastify 5 adapter                                                                      | [npm](https://www.npmjs.com/package/@zusammen/fastify)       |
+| [`@zusammen/nestjs`](packages/nestjs)           | NestJS 12 adapter                                                                      | [npm](https://www.npmjs.com/package/@zusammen/nestjs)        |
+| [`@zusammen/hono`](packages/hono)               | Hono 4 adapter                                                                         | [npm](https://www.npmjs.com/package/@zusammen/hono)          |
+| [`Zusammen.NServiceBus`](dotnet)                | For NServiceBus endpoints: resolves messages sent without a .NET type mapping          | [NuGet](https://www.nuget.org/packages/Zusammen.NServiceBus) |
 
 ### NServiceBus interoperability
 

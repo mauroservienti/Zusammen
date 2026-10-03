@@ -144,9 +144,9 @@ The factory calls `transport.validateConvention(convention)` at startup; the NSe
 
 1. **One outbox document per session**, `_id = sessionId` — enables the tombstone and atomic `markDispatched`.
 2. **Commit window**: `maxCommitDurationMs` default 15 s, configurable per factory and per session.
-3. **Retry delay**: exponential backoff (`commitDelayIncrementMs` doubles per attempt, capped), carried in the control message.
+3. **Retry delay**: while waiting for a commit, the delay starts at 1 s and doubles per attempt, capped at 10 s and at the remaining window, so the last retry lands exactly when the window expires. Failures (dispatch or storage errors) are counted separately in `ControlMessage.failures`, retried with their own backoff (1 s doubling, capped at 60 s), and never consume the commit window. All values are configurable via `controlTiming`.
 4. **RabbitMQ delays without plugins**: per-delay-level retry queues with a message TTL that dead-letter back to the control queue.
-5. **Error queue**: control messages exceeding max attempts (for reasons other than the commit window) go to `zusammen.control.error`.
+5. **Error queue**: after `maxFailures` (default 10) the handler returns `error` and the transport moves the control message to `zusammen.control.error`.
 6. **Cleanup**: TTL index on `dispatchedAt` (configurable retention, default 7 days).
 7. **Wire format is pluggable**: `MessageConvention` + per-transport `RoutingTopology`; the default is a minimal Zusammen format, NServiceBus is opt-in.
 8. **`mandatory` only for sends**: an unroutable send is a dispatch failure (retried by the control message); an event with no subscribers is legitimate and must not fail.
@@ -303,7 +303,7 @@ The [NServiceBus TransactionalSession acceptance tests](https://github.com/Parti
 
 1. **Scaffold** — pnpm workspace, TypeScript project references, Vitest, ESLint/Prettier, `docker-compose.yml` (MongoDB replica set + RabbitMQ) for local dev, CI workflow, scheduled NServiceBus conformance drift check (see below).
 2. **Core contracts** — types, interfaces (`PersistenceProvider`, `TransportProvider`, `MessageConvention`, `TransactionalSession`, `SessionFactory`), error classes, logger. Type-level tests (`expectTypeOf`) for the contracts.
-3. **Core logic + default convention** — `TransactionalSession`, session factory, `ControlMessageHandler` (window/backoff/tombstone), Zusammen convention. Unit tests with in-memory fake providers covering every row of the decision table and every failure scenario.
+3. **Core logic + default convention** — `TransactionalSession` (single use, `await using` rolls back), session factory (injectable clock and ID generator), `createControlMessageHandler` (window/backoff/tombstone/failures), Zusammen convention (type registry by constructor or class name, topics, pluggable serializer). Unit tests with in-memory fake providers covering every row of the decision table and every failure scenario.
 4. **MongoDB provider** — `ClientSession` transactions, primary/`majority` read and write concerns on the control path, outbox collection, indexes (TTL), tombstone via duplicate key detection, mapping duplicate key on commit to `SessionCommitConflictError`.
 5. **RabbitMQ provider** — `RoutingTopology` contract + Zusammen topology, confirm channels, control/retry/error queues, `mandatory` + returns handling for sends, consumer with prefetch, `ControlResult` → ack/delay/dead-letter mapping.
 6. **Integration tests (Testcontainers)** — scenarios below, plus concurrent sessions and multiple competing consumers, using the default wire format.

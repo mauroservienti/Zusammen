@@ -23,9 +23,9 @@ export class SessionCommitConflictError extends ZusammenError {
 export class SessionClosedError extends ZusammenError {
   constructor(
     readonly sessionId: string,
-    readonly state: 'committed' | 'rolledBack',
+    readonly state: 'committing' | 'committed' | 'rolledBack',
   ) {
-    super(`Transactional session '${sessionId}' is already ${state === 'committed' ? 'committed' : 'rolled back'}.`);
+    super(`Transactional session '${sessionId}' is already ${state === 'rolledBack' ? 'rolled back' : state}.`);
   }
 }
 

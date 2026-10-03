@@ -28,3 +28,22 @@ export {
   type TransactionalSession,
 } from './session.js';
 export type { StopControlProcessing, TransportProvider } from './transport.js';
+export {
+  createControlMessageHandler,
+  resolveControlTiming,
+  type ControlMessageHandlerOptions,
+  type ControlTimingOptions,
+  type ResolvedControlTiming,
+} from './control-handler.js';
+export { createSessionFactory, type CreateSessionFactoryOptions } from './factory.js';
+export {
+  classNameOf,
+  jsonSerializer,
+  resolveMessageType,
+  zusammenConvention,
+  ZusammenHeaders,
+  type MessageConstructor,
+  type MessageTypeRegistry,
+  type Serializer,
+  type ZusammenConventionOptions,
+} from './zusammen-convention.js';

@@ -151,6 +151,15 @@ docker compose up -d   # MongoDB (single-node replica set) and RabbitMQ for loca
 
 Releases are published by pushing a SemVer tag on `main`: see [releasing](docs/guides/releasing.md).
 
+### Pinned dependencies
+
+Dependabot skips major updates of these on purpose (`.github/dependabot.yml`):
+
+| Dependency    | Pinned to | Why                                                                                 | Revisit when                                                                              |
+| ------------- | --------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `typescript`  | 6.x       | typescript-eslint doesn't support TypeScript 7 yet                                  | typescript-eslint supports it ([#7](https://github.com/mauroservienti/Zusammen/issues/7)) |
+| `@types/node` | 22.x      | Types of the oldest supported Node.js version, so code can't use APIs Node 22 lacks | Node.js 22 support is dropped                                                             |
+
 ## License
 
 [MIT](LICENSE)

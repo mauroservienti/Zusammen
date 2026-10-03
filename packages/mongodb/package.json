@@ -1,0 +1,28 @@
+{
+  "name": "@zusammen/mongodb",
+  "version": "0.0.0",
+  "description": "MongoDB persistence for Zusammen transactional sessions",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "@zusammen/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {},
+  "peerDependencies": {
+    "@zusammen/core": "workspace:^",
+    "mongodb": "^7.0.0"
+  },
+  "devDependencies": {
+    "@zusammen/core": "workspace:^",
+    "mongodb": "^7.7.0"
+  }
+}

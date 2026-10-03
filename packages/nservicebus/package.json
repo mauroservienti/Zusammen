@@ -1,0 +1,26 @@
+{
+  "name": "@zusammen/nservicebus",
+  "version": "0.0.0",
+  "description": "Opt-in NServiceBus wire compatibility for Zusammen",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "@zusammen/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {},
+  "peerDependencies": {
+    "@zusammen/core": "workspace:^"
+  },
+  "devDependencies": {
+    "@zusammen/core": "workspace:^"
+  }
+}

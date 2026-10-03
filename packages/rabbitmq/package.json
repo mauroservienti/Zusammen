@@ -1,0 +1,33 @@
+{
+  "name": "@zusammen/rabbitmq",
+  "version": "0.0.0",
+  "description": "RabbitMQ transport for Zusammen transactional sessions",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "@zusammen/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./nservicebus": {
+      "@zusammen/source": "./src/nservicebus/index.ts",
+      "types": "./dist/nservicebus/index.d.ts",
+      "default": "./dist/nservicebus/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {},
+  "peerDependencies": {
+    "@zusammen/core": "workspace:^",
+    "amqplib": "^2.0.0"
+  },
+  "devDependencies": {
+    "@zusammen/core": "workspace:^",
+    "amqplib": "^2.2.0"
+  }
+}

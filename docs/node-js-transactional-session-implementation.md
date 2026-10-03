@@ -120,7 +120,8 @@ interface PersistenceProvider<TCtx> {
   disconnect(): Promise<void>;
 }
 
-type ControlResult = { kind: 'ack' } | { kind: 'retry'; delayMs: number; next: ControlMessage } | { kind: 'error'; error: Error };
+type ControlResult =
+  { kind: 'ack' } | { kind: 'retry'; delayMs: number; next: ControlMessage } | { kind: 'error'; error: Error };
 
 interface TransportProvider {
   dispatch(operations: TransportOperation[]): Promise<void>; // with publisher confirms
@@ -195,7 +196,7 @@ The factory calls `transport.validateConvention(convention)` at startup; the NSe
 6. **Cleanup**: TTL index on `dispatchedAt` (configurable retention, default 7 days).
 7. **Wire format is pluggable**: `MessageConvention` + per-transport `RoutingTopology`; the default is a minimal Zusammen format, NServiceBus is opt-in.
 8. **`mandatory` only for sends**: an unroutable send is a dispatch failure (retried by the control message); an event with no subscribers is legitimate and must not fail.
-9. **TypeScript target**: ES2023, Node 22+ (ESM + CJS builds via tsup).
+9. **TypeScript target**: ES2023, Node 22.13+, ESM-only builds via `tsc -b` (CommonJS consumers use `require(esm)`, stable on Node 22.12+). TypeScript 6.0 until typescript-eslint supports TypeScript 7.
 10. **Every sender is a processor**: there is no separate processor role. `factory.start()` connects the providers and starts the transport's control message processing (for RabbitMQ: monitoring the control queue as one of the competing consumers), so any process that can open sessions also processes control messages. `open()` before `start()` throws. NServiceBus's separate `ProcessorEndpoint` exists for licensing reasons, not architectural ones.
 11. **Control queue per factory**: the control queue name is configurable (default `zusammen.control`), so multiple factories in one process, or multiple applications on one broker, stay independent.
 12. **Read-your-commit on the control path**: the control handler reads outbox records with consistency guarantees that see any committed transaction (MongoDB: primary read preference, `majority` read and write concern), so a committed record is never mistaken for a missing one.
@@ -342,11 +343,11 @@ The [NServiceBus TransactionalSession acceptance tests](https://github.com/Parti
 - Framework adapters: the framework itself as a peer dependency (`express`, `fastify`, `@nestjs/common` + `@nestjs/core`, `hono`)
 - `Zusammen.NServiceBus` (NuGet): `NServiceBus`
 - Compat tests: .NET 10 SDK, `NServiceBus`, `NServiceBus.RabbitMQ` (test-only, under `compat/`)
-- Dev: `typescript`, `tsup`, `vitest`, `eslint`, `prettier`, `testcontainers` (MongoDB single-node replica set + RabbitMQ)
+- Dev: `typescript`, `vitest`, `eslint`, `prettier`, `testcontainers` (MongoDB single-node replica set + RabbitMQ)
 
 ## Implementation Phases
 
-1. **Scaffold** — pnpm workspace, TypeScript project references, tsup, Vitest, ESLint/Prettier, `docker-compose.yml` (MongoDB replica set + RabbitMQ) for local dev, CI workflow, scheduled NServiceBus conformance drift check (see below).
+1. **Scaffold** — pnpm workspace, TypeScript project references, Vitest, ESLint/Prettier, `docker-compose.yml` (MongoDB replica set + RabbitMQ) for local dev, CI workflow, scheduled NServiceBus conformance drift check (see below).
 2. **Core contracts** — types, interfaces (`PersistenceProvider`, `TransportProvider`, `MessageConvention`), error classes (`SessionCommitConflictError`, `SessionClosedError`, `UnknownMessageTypeError`, …).
 3. **Core logic + default convention** — `TransactionalSession`, session factory, `ControlMessageHandler` (window/backoff/tombstone), Zusammen convention. Unit tests with in-memory fake providers covering every row of the decision table and every failure scenario.
 4. **MongoDB provider** — `ClientSession` transactions, primary/`majority` read and write concerns on the control path, outbox collection, indexes (TTL), tombstone via duplicate key detection, mapping duplicate key on commit to `SessionCommitConflictError`.

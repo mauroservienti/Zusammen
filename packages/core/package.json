@@ -1,0 +1,22 @@
+{
+  "name": "@zusammen/core",
+  "version": "0.0.0",
+  "description": "Transactional session for Node.js: outbox and control message coordination",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "@zusammen/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {},
+  "peerDependencies": {},
+  "devDependencies": {}
+}

@@ -1,0 +1,32 @@
+# Local development dependencies. Tests use Testcontainers and don't need these running.
+services:
+  mongodb:
+    image: mongo:8
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '27017:27017'
+    healthcheck:
+      # Initiates the single-node replica set on first run; transactions require a replica set
+      test:
+        [
+          'CMD',
+          'mongosh',
+          '--quiet',
+          '--eval',
+          "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 5s
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 5s
+      timeout: 10s
+      retries: 10

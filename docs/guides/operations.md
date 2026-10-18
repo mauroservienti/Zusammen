@@ -34,7 +34,7 @@ Every application instance that calls `factory.start()` consumes the control que
 - **At least one instance must be running** for messages whose immediate dispatch failed to be delivered.
 - **One control queue per application.** Applications sharing a broker must use different `controlQueue` names; instances of the same application share theirs.
 - **Error queue.** Control messages that keep failing (e.g. the broker rejects dispatches for a missing destination) end up in `<control>.error` after 10 failures, with the reason in the `zusammen.error` header. Monitor it; move messages back to the control queue to retry once the cause is fixed.
-- **Serverless** deployments with RabbitMQ are not supported: nothing would consume the control queue.
+- **Serverless** deployments with RabbitMQ aren't supported out of the box. The design allows it: any instance can process any control message, and retries are delayed by the broker, so a platform trigger delivering each control message to a function (e.g. Amazon MQ with Lambda, or the Azure Functions RabbitMQ trigger) could act as the consumer. What's missing is a way to start the factory without consuming the control queue, and a public entry point that processes a single delivered control message and applies the result (acknowledge, republish delayed retries, move failures to the error queue). There are no plans to add it for RabbitMQ; serverless is expected to come with the SQS transport ([#12](https://github.com/mauroservienti/Zusammen/issues/12)).
 
 ## Timing
 

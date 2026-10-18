@@ -156,7 +156,7 @@ The factory calls `transport.validateConvention(convention)` at startup; the NSe
 10. **Every sender is a processor**: there is no separate processor role. `factory.start()` connects the providers and starts the transport's control message processing (for RabbitMQ: monitoring the control queue as one of the competing consumers), so any process that can open sessions also processes control messages. `open()` before `start()` throws. NServiceBus's separate `ProcessorEndpoint` exists for licensing reasons, not architectural ones.
 11. **Control queue per factory**: the control queue name is configurable (default `zusammen.control`), so multiple factories in one process, or multiple applications on one broker, stay independent.
 12. **Read-your-commit on the control path**: the control handler reads outbox records with consistency guarantees that see any committed transaction (MongoDB: primary read preference, `majority` read and write concern), so a committed record is never mistaken for a missing one.
-13. **Serverless with RabbitMQ is deferred**: e.g. Amazon MQ + Lambda event-source mappings. Serverless support is expected to come naturally with an SQS transport, where Lambda triggers are the normal way to consume.
+13. **Serverless with RabbitMQ is not supported out of the box**: the design allows it (any instance can process any control message, retries are delayed by the broker), so a platform trigger such as Amazon MQ + Lambda event-source mappings could act as the consumer. It would need a way to start the factory without consuming the control queue and a public single-message entry point in the transport. There's no real need for it with RabbitMQ, so it isn't planned; serverless support is expected to come with an SQS transport, where Lambda triggers are the normal way to consume.
 14. **Resources are user-owned by default**: providers never create collections, indexes, queues or exchanges unless `createSessionFactory({ createResources: true })` is set. By default `start()` verifies that everything exists and fails with `MissingResourcesError` listing all missing resources (a missing MongoDB TTL index is only logged). Providers expose `createResources()` / `verifyResources()` so deployment scripts can provision resources without starting a factory.
 
 ## Default Zusammen Wire Format
@@ -287,7 +287,7 @@ All adapters are thin wrappers over core:
 
 - At least one started factory must be processing the control queue. In the common deployment every web instance does it (every sender is a processor).
 - Instances can stop or crash at any time after commit; pending control messages are handled by any other instance, or by the next one to start.
-- Serverless deployments with RabbitMQ are not supported for now (decision 13).
+- Serverless deployments with RabbitMQ are not supported out of the box (decision 13).
 
 ## NServiceBus TransactionalSession Conformance
 

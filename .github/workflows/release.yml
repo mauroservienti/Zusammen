@@ -106,9 +106,17 @@ jobs:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 
       - name: Create GitHub release
+        # Idempotent: a release that already exists for the tag (e.g. drafted by hand, or from an earlier run) keeps
+        # its title and notes; the package is attached or replaced, and the release is published
         run: |
-          prerelease=()
-          if [[ "$VERSION" == *-* ]]; then prerelease=(--prerelease); fi
-          gh release create "$VERSION" artifacts/*.nupkg --verify-tag --generate-notes --title "$VERSION" "${prerelease[@]}"
+          prerelease=false
+          if [[ "$VERSION" == *-* ]]; then prerelease=true; fi
+          if gh release view "$VERSION" > /dev/null 2>&1; then
+            echo "Release $VERSION already exists: updating its assets and flags, keeping its notes"
+            gh release upload "$VERSION" artifacts/*.nupkg --clobber
+            gh release edit "$VERSION" --draft=false --prerelease="$prerelease"
+          else
+            gh release create "$VERSION" artifacts/*.nupkg --verify-tag --generate-notes --title "$VERSION" --prerelease="$prerelease"
+          fi
         env:
           GH_TOKEN: ${{ github.token }}

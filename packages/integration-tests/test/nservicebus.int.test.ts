@@ -1,8 +1,10 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
 import { nserviceBusConvention } from '@zusammen/nservicebus';
 import { nserviceBusConventionalTopology, nserviceBusDirectTopology } from '@zusammen/rabbitmq/nservicebus';
-import { Environment, sleep, unique, waitFor } from './environment.js';
+import { Environment } from './environment.js';
 import { buildEndpoint, dotnetAvailable, startEndpoint } from './nservicebus-endpoint.js';
+import { MongoDBStore } from './stores.js';
+import { sleep, unique, waitFor } from './util.js';
 
 // In CI, missing .NET must fail the run instead of silently skipping compatibility tests
 const required = process.env.ZUSAMMEN_REQUIRE_DOTNET === 'true';
@@ -29,7 +31,9 @@ const mapped = new Map<abstract new (...args: never[]) => unknown, string>([
 ]);
 
 describe.skipIf(!dotnetAvailable && !required)('NServiceBus compatibility', () => {
-  const environment = new Environment();
+  // The .NET endpoint's outbox uses MongoDB too
+  const mongo = new MongoDBStore();
+  const environment = new Environment(mongo);
   const endpoints: { stop(): Promise<void> }[] = [];
 
   beforeAll(async () => {
@@ -52,14 +56,14 @@ describe.skipIf(!dotnetAvailable && !required)('NServiceBus compatibility', () =
       managementUrl: environment.managementUrl,
       name,
       topology: topologyName,
-      mongoConnectionString: environment.mongoConnectionString,
+      mongoConnectionString: mongo.connectionString,
       zusammen: options.zusammen ?? false,
       outbox: options.outbox ?? false,
     });
     endpoints.push(endpoint);
     const topology = topologies[topologyName];
     const instance = await environment.instance({
-      database: environment.client.db(unique('zusammen').replaceAll('.', '_')),
+      database: await mongo.createDatabase(),
       controlQueue: unique('control'),
       topology: topology.create(),
       convention: nserviceBusConvention({

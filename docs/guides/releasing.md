@@ -1,6 +1,6 @@
 # Releasing
 
-For maintainers. Every release publishes **all** packages with the **same version**: the 8 `@zusammen/*` npm packages and the `Zusammen.NServiceBus` NuGet package.
+For maintainers. Every release publishes **all** packages with the **same version**: every public `@zusammen/*` npm package in `packages/` (the private test packages are skipped) and the `Zusammen.NServiceBus` NuGet package.
 
 ## Cutting a release
 

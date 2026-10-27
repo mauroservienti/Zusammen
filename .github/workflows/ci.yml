@@ -32,13 +32,24 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm format:check
-      # MongoDB 8 refuses to start on Linux 6.19+ (https://jira.mongodb.org/browse/SERVER-121912); runners vary
-      - name: Choose the MongoDB image for the runner's kernel
+      # MongoDB 8 refuses to start on Linux 6.19+ (https://jira.mongodb.org/browse/SERVER-121912) and runners vary.
+      # Fall back to MongoDB 7 only when MongoDB 8 fails with that error, so the fallback ends once it's fixed.
+      - name: Choose the MongoDB image
         run: |
-          kernel=$(uname -r | cut -d- -f1)
           image=mongo:8
-          if [ "$(printf '%s\n' 6.19 "$kernel" | sort -V | head -1)" = 6.19 ]; then image=mongo:7; fi
-          echo "Linux $kernel: testing with $image"
+          docker run -d --name mongo-probe mongo:8 > /dev/null
+          for _ in $(seq 60); do
+            logs=$(docker logs mongo-probe 2>&1)
+            if grep -q 'Waiting for connections' <<< "$logs"; then break; fi
+            if grep -q 'SERVER-121912' <<< "$logs"; then
+              image=mongo:7
+              echo "::warning title=Not testing with MongoDB 8::MongoDB 8 can't start on Linux $(uname -r) (SERVER-121912); testing with MongoDB 7 instead"
+              break
+            fi
+            sleep 1
+          done
+          docker rm -f mongo-probe > /dev/null
+          echo "Linux $(uname -r): testing with $image"
           echo "ZUSAMMEN_MONGODB_IMAGE=$image" >> "$GITHUB_ENV"
       - run: pnpm test
         env:

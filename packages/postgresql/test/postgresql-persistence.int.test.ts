@@ -11,6 +11,9 @@ let schema = 0;
 beforeAll(async () => {
   container = await new PostgreSqlContainer('postgres:18').start();
   pool = new pg.Pool({ connectionString: container.getConnectionUri() });
+  // pool.end() resolves before its connections close; stopping the container then terminates them with an error
+  pool.on('error', () => undefined);
+  pool.on('connect', (client) => client.on('error', () => undefined));
 }, 120_000);
 
 afterAll(async () => {

@@ -2,14 +2,14 @@ import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/
 import { MongoClient, type ClientSession } from 'mongodb';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { MongoDBPersistence } from '@zusammen/mongodb';
-import { persistenceProviderContract, sampleRecord } from '@zusammen/testing';
+import { MONGODB_IMAGE, persistenceProviderContract, sampleRecord } from '@zusammen/testing';
 
 let container: StartedMongoDBContainer;
 let client: MongoClient;
 let database = 0;
 
 beforeAll(async () => {
-  container = await new MongoDBContainer('mongo:8').start();
+  container = await new MongoDBContainer(MONGODB_IMAGE).start();
   client = new MongoClient(container.getConnectionString(), { directConnection: true });
   await client.connect();
 }, 120_000);

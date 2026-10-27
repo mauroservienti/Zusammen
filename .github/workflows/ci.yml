@@ -32,6 +32,14 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm format:check
+      # MongoDB 8 refuses to start on Linux 6.19+ (https://jira.mongodb.org/browse/SERVER-121912); runners vary
+      - name: Choose the MongoDB image for the runner's kernel
+        run: |
+          kernel=$(uname -r | cut -d- -f1)
+          image=mongo:8
+          if [ "$(printf '%s\n' 6.19 "$kernel" | sort -V | head -1)" = 6.19 ]; then image=mongo:7; fi
+          echo "Linux $kernel: testing with $image"
+          echo "ZUSAMMEN_MONGODB_IMAGE=$image" >> "$GITHUB_ENV"
       - run: pnpm test
         env:
           ZUSAMMEN_REQUIRE_DOTNET: 'true'

@@ -1,7 +1,8 @@
 # Local development dependencies. Tests use Testcontainers and don't need these running.
 services:
   mongodb:
-    image: mongo:8
+    # MongoDB 8 doesn't start on Linux 6.19+ (SERVER-121912): set ZUSAMMEN_MONGODB_IMAGE=mongo:7 there
+    image: ${ZUSAMMEN_MONGODB_IMAGE:-mongo:8}
     command: ['--replSet', 'rs0', '--bind_ip_all']
     ports:
       - '27017:27017'

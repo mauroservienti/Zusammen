@@ -34,7 +34,7 @@ npm install @zusammen/express express   # or fastify, nestjs, hono
 npm install @zusammen/nservicebus       # opt-in NServiceBus compatibility
 ```
 
-Until 1.0, releases are prereleases on the `next` dist-tag: add `@next` (e.g. `npm install @zusammen/core@next`) to get the latest one. Requires Node.js 22.13+, and MongoDB running as a replica set or sharded cluster (transactions) or PostgreSQL. Tested with MongoDB 8, PostgreSQL 18, RabbitMQ 4 and NServiceBus 10.
+Until 1.0, releases are prereleases on the `next` dist-tag: add `@next` (e.g. `npm install @zusammen/core@next`) to get the latest one. Requires Node.js 22.13+, and MongoDB running as a replica set or sharded cluster (transactions) or PostgreSQL. Tested with MongoDB 7 and 8, PostgreSQL 18, RabbitMQ 4 and NServiceBus 10.
 
 For NServiceBus endpoints receiving unmapped messages: `dotnet add package Zusammen.NServiceBus --prerelease`.
 

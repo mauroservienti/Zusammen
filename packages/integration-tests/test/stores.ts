@@ -72,6 +72,9 @@ export class PostgreSQLStore implements Store<PoolClient> {
   async start(): Promise<void> {
     this.#container = await new PostgreSqlContainer('postgres:18').start();
     this.#pool = new pg.Pool({ connectionString: this.#container.getConnectionUri(), max: 50 });
+    // pool.end() resolves before its connections close; stopping the container then terminates them with an error
+    this.#pool.on('error', () => undefined);
+    this.#pool.on('connect', (client) => client.on('error', () => undefined));
   }
 
   async stop(): Promise<void> {

@@ -29,12 +29,12 @@ await session.commit(); // data and messages, atomically
 Pick a persistence, a transport and, optionally, a framework adapter. Libraries the packages integrate with are peer dependencies, installed alongside:
 
 ```sh
-npm install @zusammen/core @zusammen/mongodb @zusammen/rabbitmq mongodb amqplib
+npm install @zusammen/core @zusammen/mongodb @zusammen/rabbitmq mongodb amqplib   # or @zusammen/postgresql pg
 npm install @zusammen/express express   # or fastify, nestjs, hono
 npm install @zusammen/nservicebus       # opt-in NServiceBus compatibility
 ```
 
-Until 1.0, releases are prereleases on the `next` dist-tag: add `@next` (e.g. `npm install @zusammen/core@next`) to get the latest one. Requires Node.js 22.13+ and MongoDB running as a replica set or sharded cluster (transactions). Tested with MongoDB 8, RabbitMQ 4 and NServiceBus 10.
+Until 1.0, releases are prereleases on the `next` dist-tag: add `@next` (e.g. `npm install @zusammen/core@next`) to get the latest one. Requires Node.js 22.13+, and MongoDB running as a replica set or sharded cluster (transactions) or PostgreSQL. Tested with MongoDB 8, PostgreSQL 18, RabbitMQ 4 and NServiceBus 10.
 
 For NServiceBus endpoints receiving unmapped messages: `dotnet add package Zusammen.NServiceBus --prerelease`.
 
@@ -94,6 +94,7 @@ Zusammen does not provide exactly-once delivery; receivers must be idempotent.
 | ----------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | [`@zusammen/core`](packages/core)               | Sessions, control message handling, contracts, default wire format                     | [npm](https://www.npmjs.com/package/@zusammen/core)          |
 | [`@zusammen/mongodb`](packages/mongodb)         | MongoDB persistence                                                                    | [npm](https://www.npmjs.com/package/@zusammen/mongodb)       |
+| [`@zusammen/postgresql`](packages/postgresql)   | PostgreSQL persistence on `pg`                                                         | [npm](https://www.npmjs.com/package/@zusammen/postgresql)    |
 | [`@zusammen/rabbitmq`](packages/rabbitmq)       | RabbitMQ transport; NServiceBus routing topologies in `@zusammen/rabbitmq/nservicebus` | [npm](https://www.npmjs.com/package/@zusammen/rabbitmq)      |
 | [`@zusammen/nservicebus`](packages/nservicebus) | Opt-in NServiceBus wire format, so .NET endpoints can consume the messages             | [npm](https://www.npmjs.com/package/@zusammen/nservicebus)   |
 | [`@zusammen/express`](packages/express)         | Express 5 adapter                                                                      | [npm](https://www.npmjs.com/package/@zusammen/express)       |
@@ -127,7 +128,7 @@ Messages without a .NET type mapping can be consumed by endpoints that reference
 ## Documentation
 
 - Guides: [delivery guarantees](docs/guides/delivery-guarantees.md) (what receivers need to do), [message types](docs/guides/message-types.md) (naming, bundlers, NServiceBus mapping and topics), [operations](docs/guides/operations.md) (resources, control queues, timing, logging), [releasing](docs/guides/releasing.md) (for maintainers).
-- Package READMEs: [core](packages/core), [mongodb](packages/mongodb), [rabbitmq](packages/rabbitmq), [nservicebus](packages/nservicebus), [express](packages/express), [fastify](packages/fastify), [nestjs](packages/nestjs), [hono](packages/hono), [Zusammen.NServiceBus](dotnet).
+- Package READMEs: [core](packages/core), [mongodb](packages/mongodb), [postgresql](packages/postgresql), [rabbitmq](packages/rabbitmq), [nservicebus](packages/nservicebus), [express](packages/express), [fastify](packages/fastify), [nestjs](packages/nestjs), [hono](packages/hono), [Zusammen.NServiceBus](dotnet).
 - Samples: [Node.js → Node.js](samples/node-to-node) (Express API and an idempotent worker), [Node.js → NServiceBus](samples/node-to-nservicebus) (Express API and a .NET NServiceBus endpoint).
 - Design: [implementation plan](docs/node-js-transactional-session-implementation.md), [NServiceBus conformance matrix](docs/nservicebus-conformance.md).
 
@@ -150,7 +151,7 @@ pnpm typecheck
 pnpm lint
 pnpm format       # prettier
 
-docker compose up -d   # MongoDB (single-node replica set) and RabbitMQ for local experiments
+docker compose up -d   # MongoDB (single-node replica set), PostgreSQL and RabbitMQ for local experiments
 ```
 
 `pnpm conformance:check` verifies the NServiceBus conformance matrix against the upstream acceptance tests.

@@ -20,6 +20,18 @@ services:
       retries: 10
       start_period: 5s
 
+  postgresql:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'postgres']
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
   rabbitmq:
     image: rabbitmq:4-management
     ports:

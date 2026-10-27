@@ -6,6 +6,7 @@ import pg, { type PoolClient } from 'pg';
 import type { PersistenceProvider } from '@zusammen/core';
 import { MongoDBPersistence } from '@zusammen/mongodb';
 import { PostgreSQLPersistence } from '@zusammen/postgresql';
+import { MONGODB_IMAGE } from '@zusammen/testing';
 import { unique, waitFor } from './util.js';
 
 /** A database (or schema) of its own for one test, with an `orders` table/collection for business data. */
@@ -115,7 +116,7 @@ export class PostgreSQLStore implements Store<PoolClient> {
  */
 async function startReplicaSet(): Promise<{ container: StartedTestContainer; port: number }> {
   const port = await freePort();
-  const container = await new GenericContainer('mongo:8')
+  const container = await new GenericContainer(MONGODB_IMAGE)
     .withCommand(['--replSet', 'rs0', '--bind_ip_all', '--port', String(port)])
     .withExposedPorts({ container: port, host: port })
     .withWaitStrategy(Wait.forLogMessage(/Waiting for connections/))

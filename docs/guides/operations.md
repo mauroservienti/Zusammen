@@ -18,12 +18,15 @@ Provision resources in one of two ways:
 
 - **At startup**: `createSessionFactory({ ..., createResources: true })`.
 
-| Provider | Resources                                                                                                                                                                                                                         |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| MongoDB  | Outbox collection (default `zusammen_outbox`) and its TTL index on `DispatchedAt` (default retention 7 days). A missing TTL index is only a warning.                                                                              |
-| RabbitMQ | Control queue (default `zusammen.control`, quorum), error queue (`<control>.error`), delay queues `<control>.delay.{1,2,4,8,16,32,64}s` (classic, TTL), and the topology's exchanges (`zusammen.events` for the default topology) |
+| Provider   | Resources                                                                                                                                                                                                                         |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MongoDB    | Outbox collection (default `zusammen_outbox`) and its TTL index on `DispatchedAt` (default retention 7 days). A missing TTL index is only a warning.                                                                              |
+| PostgreSQL | Outbox table (default `public.zusammen_outbox`) and a partial index on `dispatched_at` for cleanup. The schema must exist. A missing index is only a warning.                                                                     |
+| RabbitMQ   | Control queue (default `zusammen.control`, quorum), error queue (`<control>.error`), delay queues `<control>.delay.{1,2,4,8,16,32,64}s` (classic, TTL), and the topology's exchanges (`zusammen.events` for the default topology) |
 
 **Business collections.** MongoDB can't create the same collection implicitly from concurrent transactions: create the collections your sessions write to beforehand.
+
+**Outbox cleanup.** MongoDB removes dispatched records and tombstones with a TTL index. PostgreSQL has no TTL: every connected instance deletes them hourly (`cleanupIntervalMs`), or a scheduled job does, see the [package README](../../packages/postgresql/README.md#cleanup).
 
 **NServiceBus conventional topology.** Event exchanges (`Namespace:TypeName`) are created by NServiceBus subscribers. Until one exists, publishing that event is skipped (nobody is subscribed). With `createResources: true`, Zusammen declares them on first publish, like NServiceBus publishers do.
 
@@ -51,4 +54,4 @@ RabbitMQ delays are rounded up to the delay queue levels (1, 2, 4 … 64 s).
 
 ## Logging
 
-Pass a `logger` (`debug`, `info`, `warn`, `error`, each with a message and structured context) to `createSessionFactory`, `RabbitMQTransport` and `MongoDBPersistence`. Worth alerting on: _"Giving up on control message"_ (error queue), _"Commit window expired … stored a tombstone"_ (a session didn't commit in time), and RabbitMQ reconnection failures.
+Pass a `logger` (`debug`, `info`, `warn`, `error`, each with a message and structured context) to `createSessionFactory`, `RabbitMQTransport`, `MongoDBPersistence` and `PostgreSQLPersistence`. Worth alerting on: _"Giving up on control message"_ (error queue), _"Commit window expired … stored a tombstone"_ (a session didn't commit in time), and RabbitMQ reconnection failures.

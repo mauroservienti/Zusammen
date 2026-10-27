@@ -8,6 +8,9 @@
       "path": "packages/mongodb/tsconfig.build.json"
     },
     {
+      "path": "packages/postgresql/tsconfig.build.json"
+    },
+    {
       "path": "packages/rabbitmq/tsconfig.build.json"
     },
     {

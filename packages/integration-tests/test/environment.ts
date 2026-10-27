@@ -1,8 +1,5 @@
-import { createServer } from 'node:net';
 import { RabbitMQContainer, type StartedRabbitMQContainer } from '@testcontainers/rabbitmq';
-import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import amqp, { type Channel, type ChannelModel, type ConsumeMessage } from 'amqplib';
-import { MongoClient, type ClientSession, type Db } from 'mongodb';
 import {
   createSessionFactory,
   type MessageConvention,
@@ -10,20 +7,9 @@ import {
   type SessionFactory,
   type TransportProvider,
 } from '@zusammen/core';
-import { MongoDBPersistence } from '@zusammen/mongodb';
 import { RabbitMQTransport, ZUSAMMEN_EVENTS_EXCHANGE, type RoutingTopology } from '@zusammen/rabbitmq';
-
-let sequence = 0;
-export const unique = (prefix: string) => `${prefix}.${String(Date.now())}.${String(++sequence)}`;
-export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-export async function waitFor(probe: () => Promise<boolean> | boolean, timeoutMs = 20_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!(await probe())) {
-    if (Date.now() > deadline) throw new Error('Timed out waiting');
-    await sleep(50);
-  }
-}
+import type { Store, StoreDatabase } from './stores.js';
+import { unique } from './util.js';
 
 /** Faults injected around the real providers. */
 export interface Faults {
@@ -37,27 +23,20 @@ export interface Faults {
   failCommit: boolean;
 }
 
-export class Environment {
-  #mongo!: StartedTestContainer;
-  mongoConnectionString!: string;
+/** RabbitMQ and a database server, shared by a test file. */
+export class Environment<TContext> {
   #rabbit!: StartedRabbitMQContainer;
   #observer!: ChannelModel;
-  #factories: SessionFactory<ClientSession>[] = [];
-  client!: MongoClient;
+  #factories: SessionFactory<TContext>[] = [];
   channel!: Channel;
   amqpUrl!: string;
   /** RabbitMQ management API, with the default guest credentials. */
   managementUrl!: string;
 
+  constructor(readonly store: Store<TContext>) {}
+
   async start(): Promise<void> {
-    let mongoPort: number;
-    [{ container: this.#mongo, port: mongoPort }, this.#rabbit] = await Promise.all([
-      startReplicaSet(),
-      new RabbitMQContainer('rabbitmq:4-management').start(),
-    ]);
-    this.mongoConnectionString = `mongodb://localhost:${String(mongoPort)}/?replicaSet=rs0`;
-    this.client = new MongoClient(this.mongoConnectionString);
-    await this.client.connect();
+    [, this.#rabbit] = await Promise.all([this.store.start(), new RabbitMQContainer('rabbitmq:4-management').start()]);
     this.amqpUrl = this.#rabbit.getAmqpUrl();
     this.managementUrl = `http://guest:guest@${this.#rabbit.getHost()}:${String(this.#rabbit.getMappedPort(15672))}`;
     this.#observer = await amqp.connect(this.amqpUrl);
@@ -71,20 +50,19 @@ export class Environment {
   async stop(): Promise<void> {
     await this.stopFactories();
     await this.#observer.close();
-    await this.client.close();
-    await Promise.all([this.#mongo.stop(), this.#rabbit.stop()]);
+    await Promise.all([this.store.stop(), this.#rabbit.stop()]);
   }
 
   /** An application instance: a started factory on real providers, with fault injection. */
   async instance(options: {
-    database: Db;
+    database: StoreDatabase<TContext>;
     controlQueue: string;
     maxCommitDurationMs?: number;
     convention?: MessageConvention;
     topology?: RoutingTopology;
   }) {
     const faults: Faults = { failingDispatches: 0, failEveryNthDispatch: 0, failCommit: false };
-    const persistence = new MongoDBPersistence({ client: this.client, databaseName: options.database.databaseName });
+    const persistence = options.database.createPersistence();
     const transport = new RabbitMQTransport({
       url: this.amqpUrl,
       controlQueue: options.controlQueue,
@@ -115,11 +93,11 @@ export class Environment {
         return transport.dispatch(operations);
       },
     };
-    const faultyPersistence: PersistenceProvider<ClientSession> = {
+    const faultyPersistence: PersistenceProvider<TContext> = {
       connect: () => persistence.connect(),
       disconnect: () => persistence.disconnect(),
-      createResources: () => persistence.createResources(),
-      verifyResources: () => persistence.verifyResources(),
+      createResources: () => persistence.createResources?.() ?? Promise.resolve(),
+      verifyResources: () => persistence.verifyResources?.() ?? Promise.resolve(),
       begin: () => persistence.begin(),
       storeOutbox: async (record, session) => {
         await faults.beforeStoreOutbox?.();
@@ -152,7 +130,7 @@ export class Environment {
     });
     await factory.start();
     this.#factories.push(factory);
-    return { factory, faults, outbox: persistence.collection };
+    return { factory, faults, persistence };
   }
 
   /** A queue receiving events published with the given topic. */
@@ -173,46 +151,4 @@ export class Environment {
       bodies: () => new Set(received.map((message) => message.content.toString())),
     };
   }
-}
-
-/**
- * A single-node replica set reachable from the host as a replica set (not only through a direct connection): the
- * container listens on the same port it's mapped to, and the member is registered as localhost:<port>. Drivers that
- * report direct connections as standalone servers (e.g. .NET) then support transactions too.
- */
-async function startReplicaSet(): Promise<{ container: StartedTestContainer; port: number }> {
-  const port = await freePort();
-  const container = await new GenericContainer('mongo:8')
-    .withCommand(['--replSet', 'rs0', '--bind_ip_all', '--port', String(port)])
-    .withExposedPorts({ container: port, host: port })
-    .withWaitStrategy(Wait.forLogMessage(/Waiting for connections/))
-    .start();
-  const initiate = `rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:${String(port)}' }] })`;
-  await container.exec(['mongosh', '--quiet', '--port', String(port), '--eval', initiate]);
-  await waitFor(async () => {
-    const status = await container.exec([
-      'mongosh',
-      '--quiet',
-      '--port',
-      String(port),
-      '--eval',
-      'db.hello().isWritablePrimary',
-    ]);
-    return status.output.trim() === 'true';
-  }, 60_000);
-  return { container, port };
-}
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, () => {
-      const address = server.address();
-      server.close(() => {
-        if (typeof address === 'object' && address !== null) resolve(address.port);
-        else reject(new Error('No port'));
-      });
-    });
-  });
 }

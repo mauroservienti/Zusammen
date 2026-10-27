@@ -244,9 +244,15 @@ importers:
       '@testcontainers/mongodb':
         specifier: ^12.2.0
         version: 12.2.0
+      '@testcontainers/postgresql':
+        specifier: ^12.2.0
+        version: 12.2.1
       '@testcontainers/rabbitmq':
         specifier: ^12.2.0
         version: 12.2.0
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
       '@zusammen/core':
         specifier: workspace:^
         version: link:../core
@@ -256,6 +262,9 @@ importers:
       '@zusammen/nservicebus':
         specifier: workspace:^
         version: link:../nservicebus
+      '@zusammen/postgresql':
+        specifier: workspace:^
+        version: link:../postgresql
       '@zusammen/rabbitmq':
         specifier: workspace:^
         version: link:../rabbitmq
@@ -268,6 +277,9 @@ importers:
       mongodb:
         specifier: ^7.7.0
         version: 7.7.0
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
       testcontainers:
         specifier: ^12.2.0
         version: 12.2.0

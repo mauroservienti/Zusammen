@@ -2,19 +2,23 @@
   "name": "@zusammen/integration-tests",
   "version": "0.0.0",
   "private": true,
-  "description": "End-to-end tests of Zusammen with MongoDB and RabbitMQ",
+  "description": "End-to-end tests of Zusammen with MongoDB or PostgreSQL and RabbitMQ",
   "license": "MIT",
   "type": "module",
   "devDependencies": {
     "@testcontainers/mongodb": "^12.2.0",
+    "@testcontainers/postgresql": "^12.2.0",
     "@testcontainers/rabbitmq": "^12.2.0",
+    "@types/pg": "^8.23.1",
     "@zusammen/core": "workspace:^",
     "@zusammen/mongodb": "workspace:^",
     "@zusammen/nservicebus": "workspace:^",
+    "@zusammen/postgresql": "workspace:^",
     "@zusammen/rabbitmq": "workspace:^",
     "@zusammen/testing": "workspace:^",
     "amqplib": "^2.2.0",
     "mongodb": "^7.7.0",
+    "pg": "^8.23.1",
     "testcontainers": "^12.2.0"
   }
 }

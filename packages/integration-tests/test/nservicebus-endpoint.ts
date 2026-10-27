@@ -1,7 +1,7 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { waitFor } from './environment.js';
+import { waitFor } from './util.js';
 
 const project = fileURLToPath(new URL('../../../dotnet/compat/Zusammen.Compat.Endpoint', import.meta.url));
 const assembly = `${project}/bin/Release/net10.0/Zusammen.Compat.Endpoint.dll`;

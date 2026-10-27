@@ -39,6 +39,10 @@ Look at which step failed:
   - if nothing was published yet, move the tag: `git tag -d X && git push origin :refs/tags/X`, then tag and push again;
   - otherwise, tag the next version (published versions can't be republished).
 
+**Don't unpublish to retry.** npm never accepts a version that was published once, even after it's unpublished, and unpublishing every version of a package blocks its name for 24 hours. Tag the next version instead.
+
+**Custom release notes.** The workflow generates notes from the merged pull requests. To write your own, draft a release for the tag before pushing it: the workflow keeps an existing release's title and notes, attaches the package and publishes it.
+
 ## Dist-tags
 
 npm sets `latest` on a package's very first version, whatever tag it's published with, so `0.1.0-alpha.1` is also `latest`. The first stable release takes `latest` over; from then on prereleases only move `next`.

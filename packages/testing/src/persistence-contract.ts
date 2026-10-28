@@ -6,8 +6,12 @@ import {
   type TransportOperation,
 } from '@zusammen/core';
 
+/** A provider that begins, commits and rolls back transactions, as sessions opened with `factory.open()` need. */
+export type TransactionalPersistenceProvider<TContext> = PersistenceProvider<TContext> &
+  Required<Pick<PersistenceProvider<TContext>, 'begin' | 'commit' | 'rollback'>>;
+
 export interface PersistenceContractFixture<TContext> {
-  persistence: PersistenceProvider<TContext>;
+  persistence: TransactionalPersistenceProvider<TContext>;
   /** Writes business data within the transaction. */
   write(context: TContext, key: string, value: string): Promise<void>;
   /** Reads committed business data. */

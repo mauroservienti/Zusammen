@@ -29,6 +29,15 @@ export class SessionClosedError extends ZusammenError {
   }
 }
 
+/** `commit()` or `rollback()` on a session in a transaction the application runs (`runInTransaction`). */
+export class ApplicationTransactionError extends ZusammenError {
+  constructor(readonly sessionId: string) {
+    super(
+      `Transactional session '${sessionId}' runs in the application's transaction: return from the runInTransaction callback to commit, or throw to roll back.`,
+    );
+  }
+}
+
 export class FactoryNotStartedError extends ZusammenError {
   constructor() {
     super('The session factory must be started before opening sessions. Call start() first.');

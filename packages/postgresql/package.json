@@ -32,6 +32,16 @@
       "@zusammen/source": "./src/typeorm/index.ts",
       "types": "./dist/typeorm/index.d.ts",
       "default": "./dist/typeorm/index.js"
+    },
+    "./knex": {
+      "@zusammen/source": "./src/knex/index.ts",
+      "types": "./dist/knex/index.d.ts",
+      "default": "./dist/knex/index.js"
+    },
+    "./kysely": {
+      "@zusammen/source": "./src/kysely/index.ts",
+      "types": "./dist/kysely/index.d.ts",
+      "default": "./dist/kysely/index.js"
     }
   },
   "files": [
@@ -44,11 +54,19 @@
   "peerDependencies": {
     "@zusammen/core": "workspace:^",
     "drizzle-orm": ">=0.45.0",
+    "knex": "^3.0.0",
+    "kysely": ">=0.28.0",
     "pg": "^8.11.0",
     "sequelize": "^6.37.0"
   },
   "peerDependenciesMeta": {
     "drizzle-orm": {
+      "optional": true
+    },
+    "knex": {
+      "optional": true
+    },
+    "kysely": {
       "optional": true
     },
     "sequelize": {
@@ -63,6 +81,8 @@
     "@zusammen/core": "workspace:^",
     "@zusammen/testing": "workspace:^",
     "drizzle-orm": "^0.45.4",
+    "knex": "^3.3.0",
+    "kysely": "^0.29.7",
     "pg": "^8.23.1",
     "pg-hstore": "^2.3.4",
     "prisma": "7.10.1",

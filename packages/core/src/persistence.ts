@@ -24,6 +24,7 @@ export interface PersistenceProvider<TContext> {
 
   /** Must see every committed record (no stale reads), otherwise a committed session can be mistaken for a missing one. */
   get(sessionId: string): Promise<OutboxRecord | null>;
+  /** Flags the record dispatched, records when, and clears its transport operations: nothing reads them afterwards. */
   markDispatched(sessionId: string): Promise<void>;
   /** Inserts an already-dispatched, empty record so a late commit of the same session fails. */
   storeTombstone(sessionId: string): Promise<'stored' | 'exists'>;

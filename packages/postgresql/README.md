@@ -220,7 +220,7 @@ Records that were never dispatched are kept: the control message is still respon
 
 ## Behavior
 
-- One outbox row per session (`id` = session ID). Transport operations are stored as JSON, with base64 bodies.
+- One outbox row per session (`id` = session ID). Transport operations are stored as JSON, with base64 bodies, and cleared once the record is dispatched.
 - A tombstone stored while a session's transaction has already inserted its row waits for that transaction: it reports `exists` if the transaction commits and is stored if it rolls back. A session whose outbox insert finds a tombstone fails with `SessionCommitConflictError` (unique violation, or a serialization failure under `serializable`).
 - Control path reads use the pool. Point it at the primary: a read replica can lag, and a committed session would be mistaken for a missing one.
 - Committing a transaction that an earlier error aborted fails, rather than reporting success for what PostgreSQL silently rolled back.

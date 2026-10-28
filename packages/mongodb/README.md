@@ -72,7 +72,7 @@ The driver's own API works the same way: `(work) => client.withSession((session)
 
 ## Behavior
 
-- One outbox document per session (`_id` = session ID). Headers are stored as key/value pairs, since header names contain dots.
+- One outbox document per session (`_id` = session ID). Headers are stored as key/value pairs, since header names contain dots. Transport operations are cleared once the record is dispatched.
 - Reads on the control path use the primary with majority read concern, so a committed session is never mistaken for a missing one.
 - A late commit that conflicts with a tombstone (duplicate key or write conflict on the outbox insert) fails with `SessionCommitConflictError`.
 - Commits are retried on `UnknownTransactionCommitResult`.

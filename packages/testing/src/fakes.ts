@@ -107,6 +107,7 @@ export class InMemoryPersistence implements PersistenceProvider<InMemoryTransact
     if (record !== undefined) {
       record.dispatched = true;
       record.dispatchedAt = new Date();
+      record.transportOperations = [];
     }
     return Promise.resolve();
   }

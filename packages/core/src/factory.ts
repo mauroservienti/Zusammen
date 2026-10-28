@@ -105,7 +105,7 @@ export function createSessionFactory<TContext>(
     },
 
     async runInTransaction<T>(
-      runTransaction: (callback: (context: TContext) => Promise<T>) => Promise<T>,
+      runTransaction: <U>(callback: (context: TContext) => Promise<U>) => Promise<U>,
       work: (session: TransactionalSession<TContext>) => Promise<T>,
       openOptions: OpenSessionOptions = {},
     ): Promise<T> {

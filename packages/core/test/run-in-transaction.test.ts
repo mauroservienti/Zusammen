@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, expectTypeOf, test } from 'vitest';
 import {
   ApplicationTransactionError,
   createSessionFactory,
@@ -46,6 +46,7 @@ describe('sessions in a transaction the application runs', () => {
     });
 
     expect(result).toBe('placed');
+    expectTypeOf(result).toEqualTypeOf<string>();
     expect(current?.status).toBe('committed');
     expect(persistence.data.get('order-1')).toEqual({ total: 42 });
     expect(transport.dispatched).toHaveLength(1);

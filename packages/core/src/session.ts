@@ -64,7 +64,7 @@ export interface SessionFactory<TContext> extends AsyncDisposable {
    * `rollback()` aren't available. Throws {@link FactoryNotStartedError} before `start()`.
    */
   runInTransaction<T>(
-    runTransaction: (callback: (context: TContext) => Promise<T>) => Promise<T>,
+    runTransaction: <U>(callback: (context: TContext) => Promise<U>) => Promise<U>,
     work: (session: TransactionalSession<TContext>) => Promise<T>,
     options?: OpenSessionOptions,
   ): Promise<T>;

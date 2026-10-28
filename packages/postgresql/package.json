@@ -12,6 +12,11 @@
       "@zusammen/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./drizzle": {
+      "@zusammen/source": "./src/drizzle/index.ts",
+      "types": "./dist/drizzle/index.d.ts",
+      "default": "./dist/drizzle/index.js"
     }
   },
   "files": [
@@ -20,13 +25,20 @@
   "dependencies": {},
   "peerDependencies": {
     "@zusammen/core": "workspace:^",
+    "drizzle-orm": ">=0.45.0",
     "pg": "^8.11.0"
+  },
+  "peerDependenciesMeta": {
+    "drizzle-orm": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@testcontainers/postgresql": "^12.2.0",
     "@types/pg": "^8.23.1",
     "@zusammen/core": "workspace:^",
     "@zusammen/testing": "workspace:^",
+    "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1",
     "testcontainers": "^12.2.0"
   },

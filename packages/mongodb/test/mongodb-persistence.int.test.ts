@@ -2,7 +2,12 @@ import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/
 import { MongoClient, type ClientSession } from 'mongodb';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { MongoDBPersistence } from '@zusammen/mongodb';
-import { MONGODB_IMAGE, persistenceProviderContract, sampleRecord } from '@zusammen/testing';
+import {
+  applicationTransactionContract,
+  MONGODB_IMAGE,
+  persistenceProviderContract,
+  sampleRecord,
+} from '@zusammen/testing';
 
 let container: StartedMongoDBContainer;
 let client: MongoClient;
@@ -34,6 +39,22 @@ persistenceProviderContract<ClientSession>('mongodb', {
     const business = client.db(databaseName).collection<{ _id: string; value: string }>('business');
     return {
       persistence,
+      write: async (session, key, value) => {
+        await business.insertOne({ _id: key, value }, { session });
+      },
+      read: async (key) => (await business.findOne({ _id: key }))?.value,
+    };
+  },
+});
+
+applicationTransactionContract<ClientSession>('mongodb (driver withTransaction)', {
+  setup: async () => {
+    const { persistence, databaseName } = await createPersistence();
+    const business = client.db(databaseName).collection<{ _id: string; value: string }>('business');
+    await client.db(databaseName).createCollection('business');
+    return {
+      persistence,
+      runTransaction: (work) => client.withSession((session) => session.withTransaction(() => work(session))),
       write: async (session, key, value) => {
         await business.insertOne({ _id: key, value }, { session });
       },

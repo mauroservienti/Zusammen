@@ -22,6 +22,16 @@
       "@zusammen/source": "./src/prisma/index.ts",
       "types": "./dist/prisma/index.d.ts",
       "default": "./dist/prisma/index.js"
+    },
+    "./sequelize": {
+      "@zusammen/source": "./src/sequelize/index.ts",
+      "types": "./dist/sequelize/index.d.ts",
+      "default": "./dist/sequelize/index.js"
+    },
+    "./typeorm": {
+      "@zusammen/source": "./src/typeorm/index.ts",
+      "types": "./dist/typeorm/index.d.ts",
+      "default": "./dist/typeorm/index.js"
     }
   },
   "files": [
@@ -34,10 +44,14 @@
   "peerDependencies": {
     "@zusammen/core": "workspace:^",
     "drizzle-orm": ">=0.45.0",
-    "pg": "^8.11.0"
+    "pg": "^8.11.0",
+    "sequelize": "^6.37.0"
   },
   "peerDependenciesMeta": {
     "drizzle-orm": {
+      "optional": true
+    },
+    "sequelize": {
       "optional": true
     }
   },
@@ -50,8 +64,11 @@
     "@zusammen/testing": "workspace:^",
     "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1",
+    "pg-hstore": "^2.3.4",
     "prisma": "7.10.1",
-    "testcontainers": "^12.2.0"
+    "sequelize": "^6.37.8",
+    "testcontainers": "^12.2.0",
+    "typeorm": "^1.1.2"
   },
   "repository": {
     "type": "git",

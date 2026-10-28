@@ -17,11 +17,19 @@
       "@zusammen/source": "./src/drizzle/index.ts",
       "types": "./dist/drizzle/index.d.ts",
       "default": "./dist/drizzle/index.js"
+    },
+    "./prisma": {
+      "@zusammen/source": "./src/prisma/index.ts",
+      "types": "./dist/prisma/index.d.ts",
+      "default": "./dist/prisma/index.js"
     }
   },
   "files": [
     "dist"
   ],
+  "scripts": {
+    "prisma:generate": "prisma generate --schema test/prisma/schema.prisma"
+  },
   "dependencies": {},
   "peerDependencies": {
     "@zusammen/core": "workspace:^",
@@ -34,12 +42,15 @@
     }
   },
   "devDependencies": {
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
     "@testcontainers/postgresql": "^12.2.0",
     "@types/pg": "^8.23.1",
     "@zusammen/core": "workspace:^",
     "@zusammen/testing": "workspace:^",
     "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1",
+    "prisma": "7.10.1",
     "testcontainers": "^12.2.0"
   },
   "repository": {

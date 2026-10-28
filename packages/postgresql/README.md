@@ -48,17 +48,30 @@ await db.insert(orders).values({ id: order.id });
 
 With `factory.runInTransaction`, the application's transaction API runs the transaction and the session joins it. When you run your own `pg` transactions, `PostgreSQLPersistence` works as is: the context is your `PoolClient`.
 
-ORMs that manage their own connections and transactions (e.g. Prisma, TypeORM, Sequelize) hand out their own transaction objects. Use `PostgreSQLOrmPersistence` with an adapter that runs a statement in that transaction; only the outbox insert runs in it, the rest of the outbox's queries use the pool:
+ORMs that manage their own connections and transactions (e.g. Prisma, TypeORM, Sequelize) hand out their own transaction objects. Use `PostgreSQLOrmPersistence` with an adapter that runs a statement in that transaction; only the outbox insert runs in it, the rest of the outbox's queries use the pool. Adapters for Prisma and Drizzle are included; for another ORM, implement `ApplicationTransactions`:
 
 ```typescript
 import { PostgreSQLOrmPersistence, type ApplicationTransactions } from '@zusammen/postgresql';
 
-const transactions: ApplicationTransactions<Prisma.TransactionClient> = {
-  execute: (tx, sql, parameters) => tx.$executeRawUnsafe(sql, ...parameters),
+const transactions: ApplicationTransactions<EntityManager> = {
+  execute: (manager, sql, parameters) => manager.query(sql, parameters),
 };
 const persistence = new PostgreSQLOrmPersistence({ pool, transactions });
-const factory = createSessionFactory({ persistence, transport });
-await factory.start();
+```
+
+`factory.open()` isn't available with `PostgreSQLOrmPersistence`: the ORM owns the transactions. Unique violations are found in the error the ORM wraps the driver's error in (`cause`, TypeORM's `driverError`, Sequelize's `parent`), or with the adapter's `sqlState(error)` for ORMs that don't keep it, so a session that finds a tombstone still fails with `SessionCommitConflictError`. The pool must reach the same database as the ORM. See the [core README](../core/README.md#in-a-transaction-the-application-runs) for the behavior.
+
+#### Prisma
+
+`@zusammen/postgresql/prisma` provides the adapter, for Prisma 7 interactive transactions (tested with `@prisma/adapter-pg`, which can share the pool). `prisma` only gives the transaction type:
+
+```typescript
+import { PrismaPg } from '@prisma/adapter-pg';
+import { prismaTransactions } from '@zusammen/postgresql/prisma';
+
+const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
+const persistence = new PostgreSQLOrmPersistence({ pool, transactions: prismaTransactions(prisma) });
+// ...
 
 await factory.runInTransaction(
   (work) => prisma.$transaction(work),
@@ -68,8 +81,6 @@ await factory.runInTransaction(
   },
 );
 ```
-
-`factory.open()` isn't available with `PostgreSQLOrmPersistence`: the ORM owns the transactions. Unique violations are found in the error the ORM wraps the driver's error in (`cause`, TypeORM's `driverError`, Sequelize's `parent`), so a session that finds a tombstone still fails with `SessionCommitConflictError`. The pool must reach the same database as the ORM. See the [core README](../core/README.md#in-a-transaction-the-application-runs) for the behavior.
 
 #### Drizzle
 

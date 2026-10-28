@@ -48,6 +48,11 @@ export interface PostgreSQLPersistenceOptions extends CommonOptions {
 export interface ApplicationTransactions<TContext> {
   /** Runs a statement with `$1`-style parameters in the transaction of `context`. */
   execute(context: TContext, sql: string, parameters: unknown[]): Promise<unknown>;
+  /**
+   * The SQLSTATE of an error `execute` threw, for ORMs that don't keep the driver's error. Without it, or when it
+   * returns undefined, the `pg` error is looked for in the error's causes.
+   */
+  sqlState?(error: unknown): string | undefined;
 }
 
 export interface PostgreSQLOrmPersistenceOptions<TContext> extends CommonOptions {
@@ -66,10 +71,10 @@ export abstract class PostgreSQLOutbox<TContext> implements PersistenceProvider<
   readonly #cleanupIntervalMs: number;
   readonly #closePoolOnDisconnect: boolean;
   readonly #logger: Logger;
-  readonly #execute: ApplicationTransactions<TContext>['execute'];
+  readonly #transactions: ApplicationTransactions<TContext>;
   #cleanupTimer: NodeJS.Timeout | undefined;
 
-  constructor(options: CommonOptions, execute: ApplicationTransactions<TContext>['execute']) {
+  constructor(options: CommonOptions, transactions: ApplicationTransactions<TContext>) {
     this.pool = options.pool;
     this.#schemaName = options.schemaName ?? DEFAULT_SCHEMA;
     this.#tableName = options.tableName ?? DEFAULT_OUTBOX_TABLE;
@@ -79,7 +84,7 @@ export abstract class PostgreSQLOutbox<TContext> implements PersistenceProvider<
     this.#cleanupIntervalMs = options.cleanupIntervalMs ?? DEFAULT_CLEANUP_INTERVAL_MS;
     this.#closePoolOnDisconnect = options.closePoolOnDisconnect ?? false;
     this.#logger = options.logger ?? silentLogger;
-    this.#execute = execute;
+    this.#transactions = transactions;
   }
 
   /** The schema-qualified, quoted outbox table name, e.g. for monitoring queries. */
@@ -152,14 +157,14 @@ export abstract class PostgreSQLOutbox<TContext> implements PersistenceProvider<
 
   async storeOutbox(record: OutboxRecord, context: TContext): Promise<void> {
     try {
-      await this.#execute(
+      await this.#transactions.execute(
         context,
         `INSERT INTO ${this.#table} (id, dispatched, dispatched_at, transport_operations) VALUES ($1, $2, $3, $4::jsonb)`,
         [record.id, record.dispatched, record.dispatchedAt ?? null, toOperationsJson(record.transportOperations)],
       );
     } catch (error) {
       // A tombstone committed first; under serializable isolation it can surface as a serialization failure
-      const code = sqlState(error);
+      const code = this.#transactions.sqlState?.(error) ?? sqlState(error);
       if (code === UNIQUE_VIOLATION || code === SERIALIZATION_FAILURE) {
         throw new SessionCommitConflictError(record.id, { cause: error });
       }
@@ -221,7 +226,7 @@ export class PostgreSQLPersistence extends PostgreSQLOutbox<PoolClient> {
   readonly #open = new WeakSet<PoolClient>();
 
   constructor(options: PostgreSQLPersistenceOptions) {
-    super(options, (client, sql, parameters) => client.query(sql, parameters));
+    super(options, { execute: (client, sql, parameters) => client.query(sql, parameters) });
     this.#begin = options.isolationLevel === undefined ? 'BEGIN' : `BEGIN ISOLATION LEVEL ${options.isolationLevel}`;
   }
 
@@ -262,7 +267,7 @@ export class PostgreSQLPersistence extends PostgreSQLOutbox<PoolClient> {
  */
 export class PostgreSQLOrmPersistence<TContext> extends PostgreSQLOutbox<TContext> {
   constructor(options: PostgreSQLOrmPersistenceOptions<TContext>) {
-    super(options, (context, sql, parameters) => options.transactions.execute(context, sql, parameters));
+    super(options, options.transactions);
   }
 }
 

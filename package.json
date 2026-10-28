@@ -8,6 +8,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "postinstall": "pnpm --filter @zusammen/postgresql prisma:generate",
     "build": "tsc -b tsconfig.build.json",
     "clean": "tsc -b tsconfig.build.json --clean",
     "typecheck": "pnpm -r --parallel exec tsc -p tsconfig.json",

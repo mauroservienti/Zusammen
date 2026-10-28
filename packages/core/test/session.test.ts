@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import {
   createSessionFactory,
   FactoryNotStartedError,
@@ -186,13 +186,13 @@ describe('transactional session', () => {
   test('re-dispatch puts identical messages on the wire', async () => {
     const { persistence, transport, factory } = await setup();
 
+    // e.g. a crash between the immediate dispatch and markDispatched
+    vi.spyOn(persistence, 'markDispatched').mockRejectedValueOnce(new Error('crashed'));
     const session = await factory.open();
     await session.publish(new OrderPlaced('order-1'));
     await session.commit();
     const first = transport.dispatched[0];
 
-    const record = persistence.records.get(session.sessionId);
-    if (record !== undefined) record.dispatched = false; // e.g. crash between dispatch and markDispatched
     await transport.drain();
 
     expect(transport.dispatched).toHaveLength(2);

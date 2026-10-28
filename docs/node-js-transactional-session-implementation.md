@@ -21,7 +21,7 @@ If the session has no outgoing operations, `commit()` only commits the database 
 1. Send the control message (with publisher confirms), delayed by the initial commit delay increment (default 1 s) so that it normally arrives after the immediate dispatch completed instead of racing it and causing a duplicate dispatch. The delay doesn't count against the commit window. If sending fails, roll back and throw.
 2. Store the outbox record (one document per session, `_id = sessionId`) inside the database transaction.
 3. Commit the database transaction.
-4. Best-effort immediate dispatch of the outbox operations, then mark the record as dispatched. Failures here are logged, not thrown — the control message covers them.
+4. Best-effort immediate dispatch of the outbox operations, then mark the record as dispatched, which clears its operations: nothing reads them afterwards. Failures here are logged, not thrown — the control message covers them.
 
 When the control message is consumed:
 

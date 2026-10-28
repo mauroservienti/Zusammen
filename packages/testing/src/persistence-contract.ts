@@ -103,7 +103,7 @@ export function persistenceProviderContract<TContext>(name: string, options: Per
       expect(await fixture.persistence.get(record.id)).toBeNull();
     });
 
-    test('markDispatched flags the record and records when', async () => {
+    test('markDispatched flags the record, records when, and clears its operations', async () => {
       const fixture = await options.setup();
       const record = await commitRecord(fixture);
       const before = Date.now();
@@ -114,7 +114,7 @@ export function persistenceProviderContract<TContext>(name: string, options: Per
       const stored = await fixture.persistence.get(record.id);
       expect(stored?.dispatched).toBe(true);
       expect(stored?.dispatchedAt?.getTime()).toBeGreaterThanOrEqual(before - 1_000);
-      expect(stored?.transportOperations).toEqual(record.transportOperations);
+      expect(stored?.transportOperations).toEqual([]);
     });
 
     test('a tombstone is a dispatched, empty record; storing it twice reports exists', async () => {

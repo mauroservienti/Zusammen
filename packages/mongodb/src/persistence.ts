@@ -182,7 +182,7 @@ export class MongoDBPersistence implements PersistenceProvider<ClientSession> {
   async markDispatched(sessionId: string): Promise<void> {
     await this.#collection.updateOne(
       { _id: sessionId, Dispatched: false },
-      { $set: { Dispatched: true, DispatchedAt: new Date() } },
+      { $set: { Dispatched: true, DispatchedAt: new Date(), TransportOperations: [] } },
     );
   }
 

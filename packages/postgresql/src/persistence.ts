@@ -182,7 +182,8 @@ export abstract class PostgreSQLOutbox<TContext> implements PersistenceProvider<
 
   async markDispatched(sessionId: string): Promise<void> {
     await this.pool.query(
-      `UPDATE ${this.#table} SET dispatched = true, dispatched_at = $2 WHERE id = $1 AND NOT dispatched`,
+      `UPDATE ${this.#table} SET dispatched = true, dispatched_at = $2, transport_operations = '[]'::jsonb
+       WHERE id = $1 AND NOT dispatched`,
       [sessionId, new Date()],
     );
   }

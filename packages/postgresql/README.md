@@ -71,6 +71,27 @@ await factory.runInTransaction(
 
 `factory.open()` isn't available with `PostgreSQLOrmPersistence`: the ORM owns the transactions. Unique violations are found in the error the ORM wraps the driver's error in (`cause`, TypeORM's `driverError`, Sequelize's `parent`), so a session that finds a tombstone still fails with `SessionCommitConflictError`. The pool must reach the same database as the ORM. See the [core README](../core/README.md#in-a-transaction-the-application-runs) for the behavior.
 
+#### Drizzle
+
+`@zusammen/postgresql/drizzle` provides the adapter, for any Drizzle PostgreSQL driver (requires `drizzle-orm` 0.45+). `db` only gives the transaction type:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzleTransactions } from '@zusammen/postgresql/drizzle';
+
+const db = drizzle(pool);
+const persistence = new PostgreSQLOrmPersistence({ pool, transactions: drizzleTransactions(db) });
+// ...
+
+await factory.runInTransaction(
+  (work) => db.transaction(work),
+  async (session) => {
+    await session.transactionContext.insert(orders).values({ id: order.id });
+    await session.publish(new OrderPlaced(order.id));
+  },
+);
+```
+
 ## Options
 
 | Option                  | Default            | Description                                                                         |

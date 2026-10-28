@@ -33,6 +33,27 @@ await session.commit();
 
 Use **the same `MongoClient`** for your data and for the persistence: sessions can't span clients.
 
+### In a transaction the application runs
+
+With `factory.runInTransaction`, your transaction API runs the transaction and the session joins it. The context is still a `ClientSession`, so Mongoose works as is: give the persistence Mongoose's client.
+
+```typescript
+import mongoose from 'mongoose';
+
+const persistence = new MongoDBPersistence({ client: mongoose.connection.getClient() });
+// ...
+
+await factory.runInTransaction(
+  (work) => mongoose.connection.transaction((session) => work(session)),
+  async (session) => {
+    await Order.create([order], { session: session.transactionContext });
+    await session.publish(new OrderPlaced(order.id));
+  },
+);
+```
+
+The driver's own API works the same way: `(work) => client.withSession((session) => session.withTransaction(() => work(session)))`. Both retry the callback on transient errors; each attempt gets a new session. See the [core README](../core/README.md#in-a-transaction-the-application-runs) for the behavior.
+
 ## Options
 
 | Option                    | Default                                  | Description                                               |

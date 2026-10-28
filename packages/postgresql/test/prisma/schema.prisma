@@ -1,0 +1,16 @@
+// Test schema: generated into ./generated before typechecking and testing (see the package's prisma:generate script)
+generator client {
+  provider = "prisma-client"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Business {
+  key   String @id
+  value String
+
+  @@map("business")
+}

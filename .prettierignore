@@ -2,3 +2,4 @@ dist
 pnpm-lock.yaml
 dotnet/**/bin
 dotnet/**/obj
+packages/postgresql/test/prisma/generated

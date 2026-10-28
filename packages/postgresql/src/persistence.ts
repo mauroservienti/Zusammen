@@ -17,11 +17,12 @@ export const DEFAULT_CLEANUP_INTERVAL_MS = 60 * 60 * 1_000;
 const UNIQUE_VIOLATION = '23505';
 const SERIALIZATION_FAILURE = '40001';
 const CLEANUP_BATCH_SIZE = 1_000;
+const MAX_CAUSE_DEPTH = 5;
 
 export type IsolationLevel = 'read committed' | 'repeatable read' | 'serializable';
 
-export interface PostgreSQLPersistenceOptions {
-  /** The pool your application uses: business queries must run on the session's client to join its transaction. */
+interface CommonOptions {
+  /** The pool for the outbox's own queries: reads, tombstones and cleanup. */
   pool: Pool;
   /** Must exist; defaults to {@link DEFAULT_SCHEMA}. */
   schemaName?: string | undefined;
@@ -31,40 +32,54 @@ export interface PostgreSQLPersistenceOptions {
   retentionMs?: number | undefined;
   /** How often expired records are deleted, from `connect()` to `disconnect()`; 0 disables it. Defaults to 1 hour. */
   cleanupIntervalMs?: number | undefined;
-  /** Defaults to the server's default (usually read committed). */
-  isolationLevel?: IsolationLevel | undefined;
   /** Whether `disconnect()` ends the pool. Defaults to false: the pool is usually shared with the application. */
   closePoolOnDisconnect?: boolean | undefined;
   logger?: Logger | undefined;
 }
 
-/** PostgreSQL persistence. The transaction context is the `PoolClient` to run your own queries on. */
-export class PostgreSQLPersistence implements PersistenceProvider<PoolClient> {
-  readonly #pool: Pool;
+export interface PostgreSQLPersistenceOptions extends CommonOptions {
+  /** The pool your application uses: business queries must run on the session's client to join its transaction. */
+  pool: Pool;
+  /** Defaults to the server's default (usually read committed). */
+  isolationLevel?: IsolationLevel | undefined;
+}
+
+/** Runs the outbox's statements in transactions the application runs, e.g. through an ORM. */
+export interface ApplicationTransactions<TContext> {
+  /** Runs a statement with `$1`-style parameters in the transaction of `context`. */
+  execute(context: TContext, sql: string, parameters: unknown[]): Promise<unknown>;
+}
+
+export interface PostgreSQLOrmPersistenceOptions<TContext> extends CommonOptions {
+  /** How to run the outbox insert in the ORM's transaction. */
+  transactions: ApplicationTransactions<TContext>;
+}
+
+/** The outbox table and the queries outside the session's transaction, shared by both providers. */
+export abstract class PostgreSQLOutbox<TContext> implements PersistenceProvider<TContext> {
+  protected readonly pool: Pool;
   readonly #schemaName: string;
   readonly #tableName: string;
   readonly #table: string;
   readonly #indexName: string;
   readonly #retentionMs: number;
   readonly #cleanupIntervalMs: number;
-  readonly #begin: string;
   readonly #closePoolOnDisconnect: boolean;
   readonly #logger: Logger;
-  // Clients with an open transaction: commit and rollback release them, later calls are no-ops
-  readonly #open = new WeakSet<PoolClient>();
+  readonly #execute: ApplicationTransactions<TContext>['execute'];
   #cleanupTimer: NodeJS.Timeout | undefined;
 
-  constructor(options: PostgreSQLPersistenceOptions) {
-    this.#pool = options.pool;
+  constructor(options: CommonOptions, execute: ApplicationTransactions<TContext>['execute']) {
+    this.pool = options.pool;
     this.#schemaName = options.schemaName ?? DEFAULT_SCHEMA;
     this.#tableName = options.tableName ?? DEFAULT_OUTBOX_TABLE;
     this.#table = `${quote(this.#schemaName)}.${quote(this.#tableName)}`;
     this.#indexName = `${this.#tableName}_dispatched_at`;
     this.#retentionMs = options.retentionMs ?? DEFAULT_RETENTION_MS;
     this.#cleanupIntervalMs = options.cleanupIntervalMs ?? DEFAULT_CLEANUP_INTERVAL_MS;
-    this.#begin = options.isolationLevel === undefined ? 'BEGIN' : `BEGIN ISOLATION LEVEL ${options.isolationLevel}`;
     this.#closePoolOnDisconnect = options.closePoolOnDisconnect ?? false;
     this.#logger = options.logger ?? silentLogger;
+    this.#execute = execute;
   }
 
   /** The schema-qualified, quoted outbox table name, e.g. for monitoring queries. */
@@ -73,7 +88,7 @@ export class PostgreSQLPersistence implements PersistenceProvider<PoolClient> {
   }
 
   async connect(): Promise<void> {
-    await this.#pool.query('SELECT 1');
+    await this.pool.query('SELECT 1');
     if (this.#cleanupIntervalMs > 0 && this.#cleanupTimer === undefined) {
       this.#cleanupTimer = setInterval(() => {
         this.removeExpired().catch((error: unknown) => {
@@ -88,13 +103,13 @@ export class PostgreSQLPersistence implements PersistenceProvider<PoolClient> {
     clearInterval(this.#cleanupTimer);
     this.#cleanupTimer = undefined;
     if (this.#closePoolOnDisconnect) {
-      await this.#pool.end();
+      await this.pool.end();
     }
   }
 
   /** Creates the outbox table and its cleanup index; the schema must exist. */
   async createResources(): Promise<void> {
-    const client = await this.#pool.connect();
+    const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       // Concurrent CREATE ... IF NOT EXISTS can still fail on the catalog's unique indexes: serialize instances
@@ -121,7 +136,7 @@ export class PostgreSQLPersistence implements PersistenceProvider<PoolClient> {
 
   /** The outbox table must exist; a missing cleanup index only makes cleanup slower, so it's logged. */
   async verifyResources(): Promise<void> {
-    const { rows } = await this.#pool.query<{ table: string | null; index: string | null }>(
+    const { rows } = await this.pool.query<{ table: string | null; index: string | null }>(
       'SELECT to_regclass($1)::text AS table, to_regclass($2)::text AS index',
       [this.#table, `${quote(this.#schemaName)}.${quote(this.#indexName)}`],
     );
@@ -135,21 +150,10 @@ export class PostgreSQLPersistence implements PersistenceProvider<PoolClient> {
     }
   }
 
-  async begin(): Promise<PoolClient> {
-    const client = await this.#pool.connect();
+  async storeOutbox(record: OutboxRecord, context: TContext): Promise<void> {
     try {
-      await client.query(this.#begin);
-    } catch (error) {
-      client.release(true);
-      throw error;
-    }
-    this.#open.add(client);
-    return client;
-  }
-
-  async storeOutbox(record: OutboxRecord, client: PoolClient): Promise<void> {
-    try {
-      await client.query(
+      await this.#execute(
+        context,
         `INSERT INTO ${this.#table} (id, dispatched, dispatched_at, transport_operations) VALUES ($1, $2, $3, $4::jsonb)`,
         [record.id, record.dispatched, record.dispatchedAt ?? null, toOperationsJson(record.transportOperations)],
       );
@@ -161,6 +165,76 @@ export class PostgreSQLPersistence implements PersistenceProvider<PoolClient> {
       }
       throw error;
     }
+  }
+
+  async get(sessionId: string): Promise<OutboxRecord | null> {
+    const { rows } = await this.pool.query<OutboxRow>(
+      `SELECT id, dispatched, dispatched_at, transport_operations FROM ${this.#table} WHERE id = $1`,
+      [sessionId],
+    );
+    return rows[0] === undefined ? null : fromRow(rows[0]);
+  }
+
+  async markDispatched(sessionId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.#table} SET dispatched = true, dispatched_at = $2 WHERE id = $1 AND NOT dispatched`,
+      [sessionId, new Date()],
+    );
+  }
+
+  async storeTombstone(sessionId: string): Promise<'stored' | 'exists'> {
+    // Waits for an in-flight transaction that inserted the same ID: exists if it commits, stored if it rolls back
+    const result = await this.pool.query(
+      `INSERT INTO ${this.#table} (id, dispatched, dispatched_at, transport_operations)
+       VALUES ($1, true, $2, '[]'::jsonb) ON CONFLICT (id) DO NOTHING`,
+      [sessionId, new Date()],
+    );
+    return result.rowCount === 1 ? 'stored' : 'exists';
+  }
+
+  /**
+   * Deletes dispatched records and tombstones older than the retention, in batches; returns how many. Runs every
+   * `cleanupIntervalMs` while connected; call it from a scheduled job instead when that's disabled.
+   */
+  async removeExpired(): Promise<number> {
+    const cutoff = new Date(Date.now() - this.#retentionMs);
+    let removed = 0;
+    for (;;) {
+      const result = await this.pool.query(
+        `DELETE FROM ${this.#table} WHERE id IN (
+           SELECT id FROM ${this.#table} WHERE dispatched AND dispatched_at < $1 LIMIT $2 FOR UPDATE SKIP LOCKED
+         )`,
+        [cutoff, CLEANUP_BATCH_SIZE],
+      );
+      removed += result.rowCount ?? 0;
+      if ((result.rowCount ?? 0) < CLEANUP_BATCH_SIZE) {
+        return removed;
+      }
+    }
+  }
+}
+
+/** PostgreSQL persistence. The transaction context is the `PoolClient` to run your own queries on. */
+export class PostgreSQLPersistence extends PostgreSQLOutbox<PoolClient> {
+  readonly #begin: string;
+  // Clients with an open transaction: commit and rollback release them, later calls are no-ops
+  readonly #open = new WeakSet<PoolClient>();
+
+  constructor(options: PostgreSQLPersistenceOptions) {
+    super(options, (client, sql, parameters) => client.query(sql, parameters));
+    this.#begin = options.isolationLevel === undefined ? 'BEGIN' : `BEGIN ISOLATION LEVEL ${options.isolationLevel}`;
+  }
+
+  async begin(): Promise<PoolClient> {
+    const client = await this.pool.connect();
+    try {
+      await client.query(this.#begin);
+    } catch (error) {
+      client.release(true);
+      throw error;
+    }
+    this.#open.add(client);
+    return client;
   }
 
   async commit(client: PoolClient): Promise<void> {
@@ -180,51 +254,15 @@ export class PostgreSQLPersistence implements PersistenceProvider<PoolClient> {
     }
     await end(client, 'ROLLBACK');
   }
+}
 
-  async get(sessionId: string): Promise<OutboxRecord | null> {
-    const { rows } = await this.#pool.query<OutboxRow>(
-      `SELECT id, dispatched, dispatched_at, transport_operations FROM ${this.#table} WHERE id = $1`,
-      [sessionId],
-    );
-    return rows[0] === undefined ? null : fromRow(rows[0]);
-  }
-
-  async markDispatched(sessionId: string): Promise<void> {
-    await this.#pool.query(
-      `UPDATE ${this.#table} SET dispatched = true, dispatched_at = $2 WHERE id = $1 AND NOT dispatched`,
-      [sessionId, new Date()],
-    );
-  }
-
-  async storeTombstone(sessionId: string): Promise<'stored' | 'exists'> {
-    // Waits for an in-flight transaction that inserted the same ID: exists if it commits, stored if it rolls back
-    const result = await this.#pool.query(
-      `INSERT INTO ${this.#table} (id, dispatched, dispatched_at, transport_operations)
-       VALUES ($1, true, $2, '[]'::jsonb) ON CONFLICT (id) DO NOTHING`,
-      [sessionId, new Date()],
-    );
-    return result.rowCount === 1 ? 'stored' : 'exists';
-  }
-
-  /**
-   * Deletes dispatched records and tombstones older than the retention, in batches; returns how many. Runs every
-   * `cleanupIntervalMs` while connected; call it from a scheduled job instead when that's disabled.
-   */
-  async removeExpired(): Promise<number> {
-    const cutoff = new Date(Date.now() - this.#retentionMs);
-    let removed = 0;
-    for (;;) {
-      const result = await this.#pool.query(
-        `DELETE FROM ${this.#table} WHERE id IN (
-           SELECT id FROM ${this.#table} WHERE dispatched AND dispatched_at < $1 LIMIT $2 FOR UPDATE SKIP LOCKED
-         )`,
-        [cutoff, CLEANUP_BATCH_SIZE],
-      );
-      removed += result.rowCount ?? 0;
-      if ((result.rowCount ?? 0) < CLEANUP_BATCH_SIZE) {
-        return removed;
-      }
-    }
+/**
+ * PostgreSQL persistence for transactions an ORM runs: use `factory.runInTransaction` with the ORM's transaction API.
+ * The transaction context is the ORM's (e.g. Prisma's or Drizzle's `tx`); only the outbox insert runs in it.
+ */
+export class PostgreSQLOrmPersistence<TContext> extends PostgreSQLOutbox<TContext> {
+  constructor(options: PostgreSQLOrmPersistenceOptions<TContext>) {
+    super(options, (context, sql, parameters) => options.transactions.execute(context, sql, parameters));
   }
 }
 
@@ -244,7 +282,22 @@ function quote(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
 }
 
-/** The SQLSTATE of a server error, undefined for anything else (e.g. a broken connection). */
-function sqlState(error: unknown): string | undefined {
-  return error instanceof pg.DatabaseError ? error.code : undefined;
+/**
+ * The SQLSTATE of a server error, undefined for anything else (e.g. a broken connection). ORMs wrap the driver's
+ * error: look through `cause` and the properties ORMs keep it in (TypeORM's `driverError`, Sequelize's `parent`).
+ */
+function sqlState(error: unknown, depth = 0): string | undefined {
+  if (error instanceof pg.DatabaseError) {
+    return error.code;
+  }
+  if (typeof error !== 'object' || error === null || depth >= MAX_CAUSE_DEPTH) {
+    return undefined;
+  }
+  for (const key of ['cause', 'driverError', 'parent', 'original'] as const) {
+    const code = sqlState((error as Record<string, unknown>)[key], depth + 1);
+    if (code !== undefined) {
+      return code;
+    }
+  }
+  return undefined;
 }

@@ -44,20 +44,46 @@ const db = drizzle(session.transactionContext);
 await db.insert(orders).values({ id: order.id });
 ```
 
-Libraries that manage their own connections and transactions (e.g. Prisma, TypeORM, Sequelize) can't join the session's transaction this way.
+### In a transaction the application runs
+
+With `factory.runInTransaction`, the application's transaction API runs the transaction and the session joins it. When you run your own `pg` transactions, `PostgreSQLPersistence` works as is: the context is your `PoolClient`.
+
+ORMs that manage their own connections and transactions (e.g. Prisma, TypeORM, Sequelize) hand out their own transaction objects. Use `PostgreSQLOrmPersistence` with an adapter that runs a statement in that transaction; only the outbox insert runs in it, the rest of the outbox's queries use the pool:
+
+```typescript
+import { PostgreSQLOrmPersistence, type ApplicationTransactions } from '@zusammen/postgresql';
+
+const transactions: ApplicationTransactions<Prisma.TransactionClient> = {
+  execute: (tx, sql, parameters) => tx.$executeRawUnsafe(sql, ...parameters),
+};
+const persistence = new PostgreSQLOrmPersistence({ pool, transactions });
+const factory = createSessionFactory({ persistence, transport });
+await factory.start();
+
+await factory.runInTransaction(
+  (work) => prisma.$transaction(work),
+  async (session) => {
+    await session.transactionContext.order.create({ data: order });
+    await session.publish(new OrderPlaced(order.id));
+  },
+);
+```
+
+`factory.open()` isn't available with `PostgreSQLOrmPersistence`: the ORM owns the transactions. Unique violations are found in the error the ORM wraps the driver's error in (`cause`, TypeORM's `driverError`, Sequelize's `parent`), so a session that finds a tombstone still fails with `SessionCommitConflictError`. The pool must reach the same database as the ORM. See the [core README](../core/README.md#in-a-transaction-the-application-runs) for the behavior.
 
 ## Options
 
-| Option                  | Default            | Description                                                     |
-| ----------------------- | ------------------ | --------------------------------------------------------------- |
-| `pool`                  |                    | The application's `pg.Pool`                                     |
-| `schemaName`            | `public`           | Must exist                                                      |
-| `tableName`             | `zusammen_outbox`  |                                                                 |
-| `retentionMs`           | 7 days             | How long dispatched records and tombstones are kept             |
-| `cleanupIntervalMs`     | 1 hour             | How often expired records are deleted while connected; 0: never |
-| `isolationLevel`        | the server default | `read committed`, `repeatable read` or `serializable`           |
-| `closePoolOnDisconnect` | `false`            | The pool is usually shared with the application                 |
-| `logger`                | silent             |                                                                 |
+| Option                  | Default            | Description                                                                         |
+| ----------------------- | ------------------ | ----------------------------------------------------------------------------------- |
+| `pool`                  |                    | The application's `pg.Pool`                                                         |
+| `transactions`          |                    | `PostgreSQLOrmPersistence` only: runs the outbox insert                             |
+| `schemaName`            | `public`           | Must exist                                                                          |
+| `tableName`             | `zusammen_outbox`  |                                                                                     |
+| `retentionMs`           | 7 days             | How long dispatched records and tombstones are kept                                 |
+| `cleanupIntervalMs`     | 1 hour             | How often expired records are deleted while connected; 0: never                     |
+| `isolationLevel`        | the server default | `PostgreSQLPersistence` only: `read committed`, `repeatable read` or `serializable` |
+| `closePoolOnDisconnect` | `false`            | The pool is usually shared with the application                                     |
+| `logger`                | silent             |                                                                                     |
 
 ## Resources
 

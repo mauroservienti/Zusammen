@@ -193,3 +193,102 @@ export function persistenceProviderContract<TContext>(name: string, options: Per
     });
   });
 }
+
+export interface ApplicationTransactionFixture<TContext> {
+  persistence: PersistenceProvider<TContext>;
+  /** Runs `work` in a transaction the application owns (e.g. an ORM's), committing when it returns. */
+  runTransaction<T>(work: (context: TContext) => Promise<T>): Promise<T>;
+  /** Writes business data within the transaction. */
+  write(context: TContext, key: string, value: string): Promise<void>;
+  /** Reads committed business data. */
+  read(key: string): Promise<string | undefined>;
+}
+
+export interface ApplicationTransactionContractOptions<TContext> {
+  /** Creates a connected provider with empty storage; called once per test. */
+  setup(): Promise<ApplicationTransactionFixture<TContext>>;
+}
+
+/** Behavior a {@link PersistenceProvider} must provide for sessions in transactions the application runs. */
+export function applicationTransactionContract<TContext>(
+  name: string,
+  options: ApplicationTransactionContractOptions<TContext>,
+) {
+  describe(`${name}: application transaction contract`, () => {
+    test('business data and the outbox record commit with the application transaction', async () => {
+      const fixture = await options.setup();
+      const key = uniqueId('order');
+      const record = sampleRecord();
+
+      await fixture.runTransaction(async (context) => {
+        await fixture.write(context, key, 'placed');
+        await fixture.persistence.storeOutbox(record, context);
+        expect(await fixture.persistence.get(record.id)).toBeNull();
+      });
+
+      expect(await fixture.read(key)).toBe('placed');
+      expect(await fixture.persistence.get(record.id)).toEqual(record);
+    });
+
+    test('a failing application transaction discards business data and the outbox record', async () => {
+      const fixture = await options.setup();
+      const key = uniqueId('order');
+      const record = sampleRecord();
+
+      const run = fixture.runTransaction(async (context) => {
+        await fixture.write(context, key, 'placed');
+        await fixture.persistence.storeOutbox(record, context);
+        throw new Error('out of stock');
+      });
+
+      await expect(run).rejects.toThrow('out of stock');
+      expect(await fixture.read(key)).toBeUndefined();
+      expect(await fixture.persistence.get(record.id)).toBeNull();
+    });
+
+    test('a tombstone stored first fails the outbox insert, and the business data is discarded', async () => {
+      const fixture = await options.setup();
+      const key = uniqueId('order');
+      const record = sampleRecord();
+
+      const run = fixture.runTransaction(async (context) => {
+        await fixture.write(context, key, 'placed');
+        expect(await fixture.persistence.storeTombstone(record.id)).toBe('stored');
+        await fixture.persistence.storeOutbox(record, context);
+      });
+
+      await expect(run).rejects.toBeInstanceOf(SessionCommitConflictError);
+      expect(await fixture.read(key)).toBeUndefined();
+      expect(await fixture.persistence.get(record.id)).toMatchObject({ dispatched: true, transportOperations: [] });
+    });
+
+    test('a tombstone racing the application commit: exactly one of them wins', async () => {
+      const fixture = await options.setup();
+      const key = uniqueId('order');
+      const record = sampleRecord();
+
+      let tombstone: Promise<'stored' | 'exists'> | undefined;
+      const [commit] = await Promise.allSettled([
+        fixture.runTransaction(async (context) => {
+          await fixture.write(context, key, 'placed');
+          await fixture.persistence.storeOutbox(record, context);
+          tombstone = fixture.persistence.storeTombstone(record.id);
+          // Give the tombstone time to reach the store before committing
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }),
+      ]);
+
+      const stored = await fixture.persistence.get(record.id);
+      if (commit.status === 'fulfilled') {
+        expect(await tombstone).toBe('exists');
+        expect(stored).toEqual(record);
+        expect(await fixture.read(key)).toBe('placed');
+      } else {
+        expect(commit.reason).toBeInstanceOf(SessionCommitConflictError);
+        expect(await tombstone).toBe('stored');
+        expect(stored).toMatchObject({ dispatched: true, transportOperations: [] });
+        expect(await fixture.read(key)).toBeUndefined();
+      }
+    });
+  });
+}

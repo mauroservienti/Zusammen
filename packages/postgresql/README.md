@@ -48,13 +48,14 @@ await db.insert(orders).values({ id: order.id });
 
 With `factory.runInTransaction`, the application's transaction API runs the transaction and the session joins it. When you run your own `pg` transactions, `PostgreSQLPersistence` works as is: the context is your `PoolClient`.
 
-ORMs that manage their own connections and transactions (e.g. Prisma, TypeORM, Sequelize) hand out their own transaction objects. Use `PostgreSQLOrmPersistence` with an adapter that runs a statement in that transaction; only the outbox insert runs in it, the rest of the outbox's queries use the pool. Adapters for Prisma and Drizzle are included; for another ORM, implement `ApplicationTransactions`:
+ORMs that manage their own connections and transactions (e.g. Prisma, TypeORM, Sequelize) hand out their own transaction objects. Use `PostgreSQLOrmPersistence` with an adapter that runs a statement in that transaction; only the outbox insert runs in it, the rest of the outbox's queries use the pool. Adapters for Prisma, Drizzle, TypeORM and Sequelize are included; for another library, implement `ApplicationTransactions`:
 
 ```typescript
 import { PostgreSQLOrmPersistence, type ApplicationTransactions } from '@zusammen/postgresql';
 
-const transactions: ApplicationTransactions<EntityManager> = {
-  execute: (manager, sql, parameters) => manager.query(sql, parameters),
+const transactions: ApplicationTransactions<OrmTransaction> = {
+  // The statement has `$1`-style parameters
+  execute: (tx, sql, parameters) => tx.rawQuery(sql, parameters),
 };
 const persistence = new PostgreSQLOrmPersistence({ pool, transactions });
 ```
@@ -98,6 +99,44 @@ await factory.runInTransaction(
   (work) => db.transaction(work),
   async (session) => {
     await session.transactionContext.insert(orders).values({ id: order.id });
+    await session.publish(new OrderPlaced(order.id));
+  },
+);
+```
+
+#### TypeORM
+
+`@zusammen/postgresql/typeorm` provides the adapter (tested with TypeORM 1.1). `dataSource` only gives the entity manager type:
+
+```typescript
+import { typeormTransactions } from '@zusammen/postgresql/typeorm';
+
+const persistence = new PostgreSQLOrmPersistence({ pool, transactions: typeormTransactions(dataSource) });
+// ...
+
+await factory.runInTransaction(
+  (work) => dataSource.transaction(work),
+  async (session) => {
+    await session.transactionContext.insert(Order, { id: order.id });
+    await session.publish(new OrderPlaced(order.id));
+  },
+);
+```
+
+#### Sequelize
+
+`@zusammen/postgresql/sequelize` provides the adapter, for managed transactions (requires `sequelize` 6.37+). The transaction context is the Sequelize `Transaction`: pass it to your queries.
+
+```typescript
+import { sequelizeTransactions } from '@zusammen/postgresql/sequelize';
+
+const persistence = new PostgreSQLOrmPersistence({ pool, transactions: sequelizeTransactions(sequelize) });
+// ...
+
+await factory.runInTransaction(
+  (work) => sequelize.transaction(work),
+  async (session) => {
+    await Order.create({ id: order.id }, { transaction: session.transactionContext });
     await session.publish(new OrderPlaced(order.id));
   },
 );

@@ -48,7 +48,7 @@ await db.insert(orders).values({ id: order.id });
 
 With `factory.runInTransaction`, the application's transaction API runs the transaction and the session joins it. When you run your own `pg` transactions, `PostgreSQLPersistence` works as is: the context is your `PoolClient`.
 
-ORMs that manage their own connections and transactions (e.g. Prisma, TypeORM, Sequelize) hand out their own transaction objects. Use `PostgreSQLOrmPersistence` with an adapter that runs a statement in that transaction; only the outbox insert runs in it, the rest of the outbox's queries use the pool. Adapters for Prisma, Drizzle, TypeORM and Sequelize are included; for another library, implement `ApplicationTransactions`:
+ORMs that manage their own connections and transactions (e.g. Prisma, TypeORM, Sequelize) hand out their own transaction objects. Use `PostgreSQLOrmPersistence` with an adapter that runs a statement in that transaction; only the outbox insert runs in it, the rest of the outbox's queries use the pool. Adapters for Prisma, Drizzle, TypeORM, Sequelize, Knex and Kysely are included; for another library, implement `ApplicationTransactions`:
 
 ```typescript
 import { PostgreSQLOrmPersistence, type ApplicationTransactions } from '@zusammen/postgresql';
@@ -137,6 +137,44 @@ await factory.runInTransaction(
   (work) => sequelize.transaction(work),
   async (session) => {
     await Order.create({ id: order.id }, { transaction: session.transactionContext });
+    await session.publish(new OrderPlaced(order.id));
+  },
+);
+```
+
+#### Knex
+
+`@zusammen/postgresql/knex` provides the adapter (requires `knex` 3). The transaction context is the Knex transaction:
+
+```typescript
+import { knexTransactions } from '@zusammen/postgresql/knex';
+
+const persistence = new PostgreSQLOrmPersistence({ pool, transactions: knexTransactions() });
+// ...
+
+await factory.runInTransaction(
+  (work) => knex.transaction(work),
+  async (session) => {
+    await session.transactionContext('orders').insert({ id: order.id });
+    await session.publish(new OrderPlaced(order.id));
+  },
+);
+```
+
+#### Kysely
+
+`@zusammen/postgresql/kysely` provides the adapter (requires `kysely` 0.28+). `db` only gives the database type:
+
+```typescript
+import { kyselyTransactions } from '@zusammen/postgresql/kysely';
+
+const persistence = new PostgreSQLOrmPersistence({ pool, transactions: kyselyTransactions(db) });
+// ...
+
+await factory.runInTransaction(
+  (work) => db.transaction().execute(work),
+  async (session) => {
+    await session.transactionContext.insertInto('orders').values({ id: order.id }).execute();
     await session.publish(new OrderPlaced(order.id));
   },
 );

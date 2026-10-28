@@ -3,16 +3,15 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import { MongoClient, type ClientSession } from 'mongodb';
 import pg, { type PoolClient } from 'pg';
-import type { PersistenceProvider } from '@zusammen/core';
 import { MongoDBPersistence } from '@zusammen/mongodb';
 import { PostgreSQLPersistence } from '@zusammen/postgresql';
-import { MONGODB_IMAGE } from '@zusammen/testing';
+import { MONGODB_IMAGE, type TransactionalPersistenceProvider } from '@zusammen/testing';
 import { unique, waitFor } from './util.js';
 
 /** A database (or schema) of its own for one test, with an `orders` table/collection for business data. */
 export interface StoreDatabase<TContext> {
   /** A new provider on this database, as each application instance has its own. */
-  createPersistence(): PersistenceProvider<TContext>;
+  createPersistence(): TransactionalPersistenceProvider<TContext>;
   insertOrder(context: TContext, orderId: string): Promise<void>;
   hasOrder(orderId: string): Promise<boolean>;
   countOrders(): Promise<number>;

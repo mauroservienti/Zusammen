@@ -29,7 +29,7 @@ describe('contracts', () => {
   test('sessions expose the persistence transaction context', () => {
     type MongoLikeSession = { id: string };
     type Persistence = PersistenceProvider<MongoLikeSession>;
-    expectTypeOf<Parameters<Persistence['commit']>[0]>().toEqualTypeOf<MongoLikeSession>();
+    expectTypeOf<Parameters<Persistence['storeOutbox']>[1]>().toEqualTypeOf<MongoLikeSession>();
     expectTypeOf<TransactionalSession<MongoLikeSession>['transactionContext']>().toEqualTypeOf<MongoLikeSession>();
     expectTypeOf<TransactionalSession<MongoLikeSession>>().toExtend<AsyncDisposable>();
   });

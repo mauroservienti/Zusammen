@@ -41,6 +41,27 @@ await withSession(factory, async () => {
 
 For web frameworks, use the adapters: [Express](../express), [Fastify](../fastify), [NestJS](../nestjs), [Hono](../hono).
 
+### In a transaction the application runs
+
+When an ORM or query builder runs the transaction through a callback (e.g. `prisma.$transaction(fn)`), let it: pass that API to `runInTransaction`, and the session joins its transaction.
+
+```typescript
+const order = await factory.runInTransaction(
+  (work) => prisma.$transaction(work), // calls work with the transaction, commits when it returns
+  async (session) => {
+    const order = await session.transactionContext.order.create({ data }); // the ORM's transaction
+    await session.publish(new OrderPlaced(order.id));
+    return order;
+  },
+);
+```
+
+- The outbox record is stored in the application's transaction once the work returns; messages are dispatched once that transaction commits.
+- Throw from the work to roll back. The session's `commit()` and `rollback()` throw `ApplicationTransactionError`: the application's transaction API commits and rolls back.
+- `getSession()` works inside the work, as with `withSession`.
+- A transaction API that retries its callback gets a new session per attempt.
+- The persistence provider must support the application's transaction as its `TContext` (see its README).
+
 ## Factory options
 
 | Option                | Default                                                  | Description                                                                   |
@@ -63,7 +84,8 @@ For web frameworks, use the adapters: [Express](../express), [Fastify](../fastif
 | ----------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `SessionCommitConflictError`  | The commit took longer than the commit window and the safety net gave up on it; nothing was committed |
 | `SessionClosedError`          | Using a session after commit or rollback                                                              |
-| `FactoryNotStartedError`      | `open()` before `start()`                                                                             |
+| `FactoryNotStartedError`      | `open()` or `runInTransaction()` before `start()`                                                     |
+| `ApplicationTransactionError` | `commit()` or `rollback()` on a session in `runInTransaction`                                         |
 | `MissingResourcesError`       | Resources are missing at startup; `resources` lists them                                              |
 | `UnknownMessageTypeError`     | The convention can't name a message                                                                   |
 | `UnknownPublishTopicError`    | The convention needs a publish topic and has none                                                     |
@@ -72,4 +94,4 @@ For web frameworks, use the adapters: [Express](../express), [Fastify](../fastif
 
 ## Writing providers
 
-Implement `PersistenceProvider<TContext>` or `TransportProvider`. Persistence providers must pass the shared contract suite (`persistenceProviderContract` in the repository's private `@zusammen/testing` package). See the [implementation plan](../../docs/node-js-transactional-session-implementation.md) for the semantics.
+Implement `PersistenceProvider<TContext>` or `TransportProvider`. `begin`, `commit` and `rollback` are optional: without them, the provider supports `runInTransaction` but not `open()`. Persistence providers must pass the shared contract suite (`persistenceProviderContract` in the repository's private `@zusammen/testing` package). See the [implementation plan](../../docs/node-js-transactional-session-implementation.md) for the semantics.

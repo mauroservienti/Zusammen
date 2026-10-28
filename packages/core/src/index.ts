@@ -8,6 +8,7 @@ export type {
   SendOptions,
 } from './convention.js';
 export {
+  ApplicationTransactionError,
   FactoryNotStartedError,
   IncompatibleConventionError,
   MissingResourcesError,

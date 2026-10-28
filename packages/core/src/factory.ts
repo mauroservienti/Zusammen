@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { runWithSession } from './context.js';
 import { createControlMessageHandler, resolveControlTiming, type ControlTimingOptions } from './control-handler.js';
 import { FactoryNotStartedError, MissingResourcesError, ZusammenError } from './errors.js';
 import { silentLogger } from './logger.js';
+import type { PersistenceProvider } from './persistence.js';
 import {
   DEFAULT_MAX_COMMIT_DURATION_MS,
   type OpenSessionOptions,
@@ -9,7 +11,7 @@ import {
   type SessionFactoryOptions,
   type TransactionalSession,
 } from './session.js';
-import { Session, type SessionDependencies } from './session-impl.js';
+import { Session, type SessionDependencies, type SessionSettings, type SessionTransaction } from './session-impl.js';
 import type { StopControlProcessing } from './transport.js';
 import { zusammenConvention } from './zusammen-convention.js';
 
@@ -38,6 +40,18 @@ export function createSessionFactory<TContext>(
   };
 
   let stopControl: StopControlProcessing | undefined;
+
+  const ensureStarted = (): void => {
+    if (stopControl === undefined) {
+      throw new FactoryNotStartedError();
+    }
+  };
+
+  const sessionSettings = (openOptions: OpenSessionOptions): SessionSettings => ({
+    sessionId: deps.newId(),
+    maxCommitDurationMs: validateDuration(openOptions.maxCommitDurationMs ?? maxCommitDurationMs),
+    initialCommitDelayIncrementMs: timing.initialCommitDelayIncrementMs,
+  });
 
   const stop = async (): Promise<void> => {
     const stopping = stopControl;
@@ -79,19 +93,44 @@ export function createSessionFactory<TContext>(
     stop,
 
     async open(openOptions: OpenSessionOptions = {}): Promise<TransactionalSession<TContext>> {
-      if (stopControl === undefined) {
-        throw new FactoryNotStartedError();
+      ensureStarted();
+      const transactions = providerTransactions(deps.persistence);
+      const settings = sessionSettings(openOptions);
+      const context = await transactions.begin();
+      const transaction: SessionTransaction = {
+        commit: () => transactions.commit(context),
+        rollback: () => transactions.rollback(context),
+      };
+      return new Session(deps, settings, context, transaction);
+    },
+
+    async runInTransaction<T>(
+      runTransaction: (callback: (context: TContext) => Promise<T>) => Promise<T>,
+      work: (session: TransactionalSession<TContext>) => Promise<T>,
+      openOptions: OpenSessionOptions = {},
+    ): Promise<T> {
+      ensureStarted();
+      sessionSettings(openOptions); // validates the options before the transaction starts
+      let session = undefined as Session<TContext> | undefined;
+      let result: T;
+      try {
+        result = await runTransaction(async (context) => {
+          // A new session per call: transaction APIs that retry their callback start over
+          session?.rolledBack();
+          const current = new Session(deps, sessionSettings(openOptions), context, undefined);
+          session = current;
+          const value = await runWithSession(current, () => work(current));
+          await current.prepare();
+          return value;
+        });
+      } catch (error) {
+        session?.rolledBack();
+        throw error;
       }
-      const transactionContext = await deps.persistence.begin();
-      return new Session(
-        deps,
-        {
-          sessionId: deps.newId(),
-          maxCommitDurationMs: validateDuration(openOptions.maxCommitDurationMs ?? maxCommitDurationMs),
-          initialCommitDelayIncrementMs: timing.initialCommitDelayIncrementMs,
-        },
-        transactionContext,
-      );
+      if (session?.status === 'committing') {
+        await session.committed();
+      }
+      return result;
     },
 
     async [Symbol.asyncDispose]() {
@@ -116,6 +155,19 @@ async function verifyResources(...providers: { verifyResources?(): Promise<void>
   if (missing.length > 0) {
     throw new MissingResourcesError(missing);
   }
+}
+
+function providerTransactions<TContext>(persistence: PersistenceProvider<TContext>) {
+  if (persistence.begin === undefined || persistence.commit === undefined || persistence.rollback === undefined) {
+    throw new ZusammenError(
+      "The persistence provider doesn't begin transactions: use runInTransaction() with your transaction API.",
+    );
+  }
+  return {
+    begin: persistence.begin.bind(persistence),
+    commit: persistence.commit.bind(persistence),
+    rollback: persistence.rollback.bind(persistence),
+  };
 }
 
 function validateDuration(value: number): number {

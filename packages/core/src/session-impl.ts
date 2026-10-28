@@ -6,7 +6,7 @@ import type {
   PublishOptions,
   SendOptions,
 } from './convention.js';
-import { SessionClosedError } from './errors.js';
+import { ApplicationTransactionError, SessionClosedError } from './errors.js';
 import type { Logger } from './logger.js';
 import type { TransportOperation } from './outbox.js';
 import type { PersistenceProvider } from './persistence.js';
@@ -28,9 +28,16 @@ export interface SessionSettings {
   initialCommitDelayIncrementMs: number;
 }
 
+/** Commits or rolls back a session's transaction. Absent when the application runs the transaction (`runInTransaction`). */
+export interface SessionTransaction {
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+}
+
 export class Session<TContext> implements TransactionalSession<TContext> {
   readonly #deps: SessionDependencies<TContext>;
   readonly #settings: SessionSettings;
+  readonly #transaction: SessionTransaction | undefined;
   readonly #operations: TransportOperation[] = [];
   readonly #conventionContext: ConventionContext;
   #state: SessionStatus = 'open';
@@ -39,9 +46,11 @@ export class Session<TContext> implements TransactionalSession<TContext> {
     deps: SessionDependencies<TContext>,
     settings: SessionSettings,
     readonly transactionContext: TContext,
+    transaction: SessionTransaction | undefined,
   ) {
     this.#deps = deps;
     this.#settings = settings;
+    this.#transaction = transaction;
     this.#conventionContext = { sessionId: settings.sessionId, now: deps.now, newId: deps.newId };
   }
 
@@ -62,15 +71,59 @@ export class Session<TContext> implements TransactionalSession<TContext> {
   }
 
   async commit(): Promise<void> {
+    const transaction = this.#ownTransaction();
     this.#ensureOpen();
     this.#state = 'committing';
-    const { persistence, transport, logger } = this.#deps;
+    await this.#finish(async () => {
+      await this.#store();
+      await transaction.commit();
+    });
+    await this.#dispatch();
+  }
 
+  async rollback(): Promise<void> {
+    const transaction = this.#ownTransaction();
+    this.#ensureOpen();
+    this.#state = 'rolledBack';
+    await transaction.rollback();
+  }
+
+  async [Symbol.asyncDispose](): Promise<void> {
+    // The application rolls back its own transaction by throwing from the runInTransaction callback
+    if (this.#state === 'open' && this.#transaction !== undefined) {
+      await this.rollback();
+    }
+  }
+
+  /** For `runInTransaction`: stores the outbox record in the application's transaction, which it then commits. */
+  async prepare(): Promise<void> {
+    this.#ensureOpen();
+    this.#state = 'committing';
+    try {
+      await this.#store();
+    } catch (error) {
+      this.#state = 'rolledBack';
+      throw error;
+    }
+  }
+
+  /** For `runInTransaction`: the application's transaction committed. */
+  async committed(): Promise<void> {
+    this.#state = 'committed';
+    await this.#dispatch();
+  }
+
+  /** For `runInTransaction`: the application's transaction didn't commit; a stored control message tombstones it. */
+  rolledBack(): void {
+    this.#state = 'rolledBack';
+  }
+
+  // Control message first: once the transaction commits, dispatch is guaranteed even if this process dies. Delayed, so
+  // that it normally finds the immediate dispatch done; the delay doesn't count against the window.
+  async #store(): Promise<void> {
     if (this.#operations.length === 0) {
-      await this.#finish(() => persistence.commit(this.transactionContext));
       return;
     }
-
     const control: ControlMessage = {
       sessionId: this.sessionId,
       remainingCommitDurationMs: this.#settings.maxCommitDurationMs,
@@ -78,35 +131,25 @@ export class Session<TContext> implements TransactionalSession<TContext> {
       attempt: 1,
       failures: 0,
     };
+    await this.#deps.transport.sendControl(control, this.#settings.initialCommitDelayIncrementMs);
+    await this.#deps.persistence.storeOutbox(
+      { id: this.sessionId, dispatched: false, transportOperations: this.#operations },
+      this.transactionContext,
+    );
+  }
 
-    await this.#finish(async () => {
-      // Control message first: once the transaction commits, dispatch is guaranteed even if this process dies.
-      // Delayed, so that it normally finds the immediate dispatch done; the delay doesn't count against the window.
-      await transport.sendControl(control, this.#settings.initialCommitDelayIncrementMs);
-      await persistence.storeOutbox(
-        { id: this.sessionId, dispatched: false, transportOperations: this.#operations },
-        this.transactionContext,
-      );
-      await persistence.commit(this.transactionContext);
-    });
-
-    try {
-      await transport.dispatch(this.#operations);
-      await persistence.markDispatched(this.sessionId);
-    } catch (error) {
-      logger.warn('Immediate dispatch failed, the control message will dispatch', { sessionId: this.sessionId, error });
+  async #dispatch(): Promise<void> {
+    if (this.#operations.length === 0) {
+      return;
     }
-  }
-
-  async rollback(): Promise<void> {
-    this.#ensureOpen();
-    this.#state = 'rolledBack';
-    await this.#deps.persistence.rollback(this.transactionContext);
-  }
-
-  async [Symbol.asyncDispose](): Promise<void> {
-    if (this.#state === 'open') {
-      await this.rollback();
+    try {
+      await this.#deps.transport.dispatch(this.#operations);
+      await this.#deps.persistence.markDispatched(this.sessionId);
+    } catch (error) {
+      this.#deps.logger.warn('Immediate dispatch failed, the control message will dispatch', {
+        sessionId: this.sessionId,
+        error,
+      });
     }
   }
 
@@ -118,7 +161,7 @@ export class Session<TContext> implements TransactionalSession<TContext> {
     } catch (error) {
       this.#state = 'rolledBack';
       try {
-        await this.#deps.persistence.rollback(this.transactionContext);
+        await this.#ownTransaction().rollback();
       } catch (rollbackError) {
         this.#deps.logger.debug('Rollback after failed commit failed', {
           sessionId: this.sessionId,
@@ -127,6 +170,13 @@ export class Session<TContext> implements TransactionalSession<TContext> {
       }
       throw error;
     }
+  }
+
+  #ownTransaction(): SessionTransaction {
+    if (this.#transaction === undefined) {
+      throw new ApplicationTransactionError(this.sessionId);
+    }
+    return this.#transaction;
   }
 
   // async so that validation and convention errors surface as rejections, like every other session failure

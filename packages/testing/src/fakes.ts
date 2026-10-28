@@ -79,6 +79,20 @@ export class InMemoryPersistence implements PersistenceProvider<InMemoryTransact
     return Promise.resolve();
   }
 
+  /** Like an ORM's callback-style transaction API: commits when `callback` returns, rolls back when it throws. */
+  async transaction<T>(callback: (tx: InMemoryTransaction) => Promise<T>): Promise<T> {
+    const tx = await this.begin();
+    let result: T;
+    try {
+      result = await callback(tx);
+    } catch (error) {
+      await this.rollback(tx);
+      throw error;
+    }
+    await this.commit(tx);
+    return result;
+  }
+
   get(sessionId: string): Promise<OutboxRecord | null> {
     if (this.staleReads > 0) {
       this.staleReads--;

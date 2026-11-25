@@ -91,6 +91,7 @@ async function setup(options: { global?: boolean } = {}) {
   class AppModule {}
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-class-instance-assignment -- Nest types its options bag as a class
   const app = moduleRef.createNestApplication({ logger: false });
   apps.push(app);
   await app.listen(0);

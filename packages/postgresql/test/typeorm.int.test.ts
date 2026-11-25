@@ -12,6 +12,7 @@ interface Business {
   value: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-class-instance-assignment -- TypeORM types its options bag as a class
 const BusinessEntity = new EntitySchema<Business>({
   name: 'Business',
   tableName: 'business',

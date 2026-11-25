@@ -9,3 +9,7 @@ allowBuilds:
   ssh2: false
 minimumReleaseAgeExclude:
   - eslint@10.12.0
+# Mongoose pins an exact driver version; the MongoDB tests hand Mongoose's client and sessions to
+# MongoDBPersistence, so both must resolve to the same driver or their types don't match
+overrides:
+  mongoose>mongodb: ^7.7.0

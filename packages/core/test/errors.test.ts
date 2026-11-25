@@ -11,7 +11,8 @@ import {
 } from '@zusammen/core';
 
 describe('errors', () => {
-  test.each([
+  // Typed, or the table's element type narrows to one of the structurally identical error classes
+  test.each<[string, ZusammenError]>([
     ['SessionCommitConflictError', new SessionCommitConflictError('s1')],
     ['SessionClosedError', new SessionClosedError('s1', 'committed')],
     ['FactoryNotStartedError', new FactoryNotStartedError()],

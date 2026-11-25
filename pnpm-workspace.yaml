@@ -13,3 +13,8 @@ minimumReleaseAgeExclude:
 # MongoDBPersistence, so both must resolve to the same driver or their types don't match
 overrides:
   mongoose>mongodb: ^7.7.0
+  # Security fixes for transitive dev dependencies whose parents pin vulnerable versions; drop each one once upstream catches up
+  # @prisma/config pins effect 3.20.0 (GHSA-7589-6fvf-x4pw)
+  '@prisma/config>effect': ^3.22.1
+  # testcontainers needs archiver@7, whose archiver-utils pins glob@10 (GHSA-3g3m-2fjr-6pw4, and minimatch GHSA-g3hv-75wg-m249)
+  archiver-utils>glob: ^14.0.2

@@ -167,6 +167,15 @@ Dependabot skips major updates of these on purpose (`.github/dependabot.yml`):
 | `typescript`  | 6.x       | typescript-eslint doesn't support TypeScript 7 yet                                  | typescript-eslint supports it ([#7](https://github.com/mauroservienti/Zusammen/issues/7)) |
 | `@types/node` | 22.x      | Types of the oldest supported Node.js version, so code can't use APIs Node 22 lacks | Node.js 22 support is dropped                                                             |
 
+### Security overrides
+
+`pnpm-workspace.yaml` forces patched versions of these transitive dev dependencies, because their parents pin vulnerable ones:
+
+| Dependency | Forced to | Pinned by                                               | Advisory                                                                                                                                                         | Revisit when                       |
+| ---------- | --------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `effect`   | ^3.22.1   | `@prisma/config` (exactly 3.20.0)                       | [GHSA-7589-6fvf-x4pw](https://github.com/advisories/GHSA-7589-6fvf-x4pw)                                                                                         | Prisma bumps `effect`              |
+| `glob`     | ^14.0.2   | `archiver-utils` (^10), via testcontainers → archiver@7 | [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4), and minimatch [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) | testcontainers moves to archiver@8 |
+
 ## License
 
 [MIT](LICENSE)

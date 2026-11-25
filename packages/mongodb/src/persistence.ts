@@ -206,7 +206,9 @@ export class MongoDBPersistence implements PersistenceProvider<ClientSession> {
   async #ensureTtlIndex(): Promise<void> {
     const expireAfterSeconds = Math.ceil(this.#retentionMs / 1_000);
     try {
-      await this.#collection.createIndex({ DispatchedAt: 1 }, { name: TTL_INDEX_NAME, expireAfterSeconds });
+      // createIndexes, not createIndex: its two-argument overload is deprecated from driver 7.9, and the
+      // replacement doesn't exist before it, while the peer range starts at 7.0
+      await this.#collection.createIndexes([{ key: { DispatchedAt: 1 }, name: TTL_INDEX_NAME, expireAfterSeconds }]);
     } catch (error) {
       if (!(error instanceof MongoServerError && error.code === INDEX_OPTIONS_CONFLICT)) {
         throw error;
